@@ -178,6 +178,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 .gdrive-info strong{font-size:13px;color:var(--text);display:block;margin-bottom:2px}
 .gdrive-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;flex-shrink:0;white-space:nowrap}
 .gdrive-btn.connected{border-color:#7aab8a;color:#7aab8a}
+.drive-reconnect-bar{position:fixed;top:0;left:0;right:0;z-index:500;background:#e0a040;color:#13120f;font-size:13px;font-weight:500;padding:10px 16px;display:none;align-items:center;justify-content:space-between;gap:12px}
+.drive-reconnect-bar button{background:rgba(0,0,0,.2);border:none;border-radius:6px;color:#13120f;font-size:12px;padding:5px 12px;cursor:pointer;font-family:inherit;font-weight:600}
 .sync-toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 16px;font-size:12px;color:var(--muted);z-index:300;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
 .sync-toast.show{opacity:1}
 
@@ -211,6 +213,7 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
 <!-- iOS background audio: persistent audio element -->
 <audio id="bg-audio" playsinline webkit-playsinline style="display:none"></audio>
 <div class="sync-toast" id="sync-toast"></div>
+<div class="drive-reconnect-bar" id="drive-reconnect-bar"><span>☁️ Google Drive disconnected — tap to reconnect</span><button onclick="tapReconnectDrive()">Reconnect</button></div>
 
 <!-- LIBRARY OPTIONS SHEET -->
 <div class="overlay" id="lib-options-sheet">
@@ -228,6 +231,14 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
               onchange="setDefaultSpeed(this.value)">
             <button class="fs-btn" onclick="changeDefaultSpeed(1)">+</button>
           </div>
+        </div>
+        <div style="padding:14px 20px;border-bottom:1px solid var(--border)">
+          <div style="font-size:14px;color:var(--text);margin-bottom:10px">💾 iCloud / Local Backup</div>
+          <div style="display:flex;gap:8px">
+            <button onclick="exportSaves()" class="btn ghost" style="flex:1;justify-content:center;font-size:13px">⬆ Export saves</button>
+            <button onclick="document.getElementById('import-saves-input').click()" class="btn ghost" style="flex:1;justify-content:center;font-size:13px">⬇ Import saves</button>
+          </div>
+          <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">Export saves to iCloud Drive. Import to restore on any device.</p>
         </div>
         <button onclick="closeSheet('lib-options-sheet');showSetup()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">🔌 Change Server URL</button>
         <button onclick="closeSheet('lib-options-sheet');clearDriveCache()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:#e07070;font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">☁️ Clear Drive Cache</button>
@@ -282,6 +293,7 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
 <div id="library-screen">
   <div class="lib-header">
     <span class="lib-title">📚 My Library</span>
+    <span id="drive-status-dot" style="font-size:11px;color:var(--muted);cursor:pointer" onclick="checkDriveStatus()" title="Drive sync status"></span>
     <button class="hbtn" onclick="document.getElementById('lib-file-input').click()">+ Add EPUB</button>
     <button class="hbtn" onclick="openSheet('lib-options-sheet')">⚙</button>
   </div>
@@ -295,6 +307,7 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
   </div>
 </div>
 <input type="file" id="lib-file-input" accept=".epub" style="display:none">
+<input type="file" id="import-saves-input" accept=".json" style="display:none" onchange="importSaves(this)">
 
 <!-- SETUP -->
 <div id="setup-screen">
@@ -600,6 +613,8 @@ window.addEventListener('DOMContentLoaded', () => {
   applyFontSize(fontSize);
   applySpeeds(speed);
   applyTheme();
+  updateDriveStatusDot();
+  if (gdriveEnabled) startReconnectChecker();
   updateGDriveUI();
   if (serverUrl) {
     startConnectionMonitor();
@@ -1871,6 +1886,131 @@ function cleanBookTitle(raw) {
   return t || raw;
 }
 
+
+function updateDriveStatusDot() {
+  const dot = document.getElementById('drive-status-dot');
+  if (!dot) return;
+  if (!gdriveEnabled) { dot.textContent = ''; return; }
+  if (isTokenValid()) {
+    dot.textContent = '☁️';
+    dot.title = 'Drive connected';
+  } else {
+    dot.textContent = '⚠️';
+    dot.title = 'Drive disconnected — tap to reconnect';
+  }
+}
+
+async function checkDriveStatus() {
+  if (!gdriveEnabled) {
+    showToast('Drive not connected');
+    return;
+  }
+  if (!isTokenValid()) {
+    showToast('Reconnecting to Drive...');
+    await signInGDrive();
+    updateDriveStatusDot();
+  } else {
+    showToast('☁️ Drive connected');
+  }
+}
+
+
+// ── DRIVE AUTO-RECONNECT BANNER ──
+let reconnectCheckInterval = null;
+
+function startReconnectChecker() {
+  if (reconnectCheckInterval) return;
+  reconnectCheckInterval = setInterval(checkDriveTokenExpiry, 60000); // check every minute
+}
+
+function checkDriveTokenExpiry() {
+  if (!gdriveEnabled) return;
+  const bar = document.getElementById('drive-reconnect-bar');
+  if (!bar) return;
+  if (!isTokenValid()) {
+    // Token expired — show banner
+    bar.style.display = 'flex';
+    // Try silent reauth first
+    attemptSilentAuth();
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+async function tapReconnectDrive() {
+  const bar = document.getElementById('drive-reconnect-bar');
+  if (bar) bar.querySelector('button').textContent = 'Connecting...';
+  await signInGDrive();
+  if (isTokenValid()) {
+    if (bar) bar.style.display = 'none';
+    // Push any pending progress
+    if (bookTitle) gdriveSavePosition();
+    showToast('☁️ Drive reconnected');
+  }
+}
+
+// Override attemptSilentAuth to hide banner on success
+const _origAttempt = window.attemptSilentAuth;
+
+
+// ── iCLOUD / LOCAL BACKUP ──
+function exportSaves() {
+  const saves = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    position: JSON.parse(localStorage.getItem('bv_pos') || 'null'),
+    library: library,
+    speed: speed,
+    fontSize: fontSize,
+    theme: currentTheme,
+    pronounceRules: pronounceRules,
+    bookmarks: bookmarks,
+    stats: readingStats
+  };
+  const blob = new Blob([JSON.stringify(saves, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'bookvoice-saves-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('✓ Saves exported — save to iCloud Drive');
+  closeSheet('lib-options-sheet');
+}
+
+function importSaves(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const saves = JSON.parse(e.target.result);
+      if (!saves.version) throw new Error('Invalid file');
+
+      // Restore everything
+      if (saves.position) localStorage.setItem('bv_pos', JSON.stringify(saves.position));
+      if (saves.library) { library = saves.library; saveLibrary(); }
+      if (saves.speed) { speed = saves.speed; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
+      if (saves.fontSize) { fontSize = saves.fontSize; applyFontSize(fontSize); localStorage.setItem('tts_fs', fontSize); }
+      if (saves.theme) { currentTheme = saves.theme; applyTheme(); localStorage.setItem('bv_theme', saves.theme); }
+      if (saves.pronounceRules) { pronounceRules = saves.pronounceRules; savePronounceRules(); }
+      if (saves.bookmarks) { bookmarks = saves.bookmarks; saveBookmarks(); }
+      if (saves.stats) { readingStats = saves.stats; saveStats(); }
+
+      renderLibrary();
+      showToast('✓ Saves restored from ' + file.name);
+
+      // Also push to Drive if connected
+      if (gdriveEnabled && isTokenValid()) gdriveSavePosition();
+
+    } catch(err) {
+      showToast('✗ Invalid save file');
+    }
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
 function showLoading(on){document.getElementById('loading-bar').style.display=on?'block':'none';}
 
 // ── AUTO-HIDE PLAYER ──
@@ -2050,7 +2190,7 @@ function saveLibrary() {
 }
 
 function showLibrary() {
-  // Pause if playing
+  updateDriveStatusDot();
   if (isPlaying) stopReading();
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
@@ -2114,45 +2254,118 @@ async function openBookFromLibrary(idx) {
   const book = library[idx];
   if (!serverUrl) { showSetup(); return; }
 
-  // If EPUB is cached in memory, open directly
-  if (epubCache[book.title]) {
-    chapters = epubCache[book.title].chapters;
-    bookTitle = book.title;
+  // Helper to show reader with loaded chapters
+  function showReader() {
     document.getElementById('book-name').textContent = bookTitle;
-
-    // Always reset visibility correctly
     document.getElementById('drop-zone').classList.add('hidden');
     document.getElementById('reader-scroll').classList.remove('hidden');
     document.getElementById('player').classList.remove('hidden');
-
-    // Hide library, show app
     document.getElementById('library-screen').style.display = 'none';
     document.getElementById('setup-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
-
     buildSidebar(); buildDownloadList(); setupMediaSession();
     loadChapter(book.chapter);
     sentenceIndex = book.sentence || 0;
-    // Update sentence counter display
     updateSentCounter();
+  }
+
+  // 1. Already in memory cache — open instantly
+  if (epubCache[book.title]) {
+    chapters = epubCache[book.title].chapters;
+    bookTitle = book.title;
+    showReader();
     return;
   }
 
-  // Not in cache — try Drive first
+  // 2. Try Drive
   if (gdriveEnabled && isTokenValid()) {
-    const loaded = await tryLoadFromDrive(book);
-    if (loaded) return;
+    showToast('☁️ Loading from Drive...');
+    let fileId = book.driveFileId || await driveFindEpub(book.title);
+    if (fileId) {
+      try {
+        const r = await fetch(
+          'https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media',
+          { headers: { 'Authorization': 'Bearer ' + gdriveToken } }
+        );
+        if (r.ok) {
+          const blob = await r.blob();
+          const file = new File([blob], book.title + '.epub', {type:'application/epub+zip'});
+          showLoading(true);
+          const zip = await JSZip.loadAsync(file);
+          const cxml = await zip.file('META-INF/container.xml').async('text');
+          const cdoc = new DOMParser().parseFromString(cxml,'application/xml');
+          const opfPath = cdoc.querySelector('rootfile').getAttribute('full-path');
+          const opfDir = opfPath.includes('/') ? opfPath.substring(0,opfPath.lastIndexOf('/')+1) : '';
+          const opfText = await zip.file(opfPath).async('text');
+          const opfDoc = new DOMParser().parseFromString(opfText,'application/xml');
+          const manifest={};
+          opfDoc.querySelectorAll('manifest item').forEach(item => { manifest[item.getAttribute('id')]=item.getAttribute('href'); });
+          const spineIds=[...opfDoc.querySelectorAll('spine itemref')].map(r=>r.getAttribute('idref'));
+          const loadedChapters=[];
+          for (const id of spineIds) {
+            const href=manifest[id]; if(!href) continue;
+            const entry=zip.file(opfDir+href)||zip.file(href); if(!entry) continue;
+            const html=await entry.async('text');
+            const doc=new DOMParser().parseFromString(html,'text/html');
+            doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
+            const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
+            if(text.length<50) continue;
+            const title=(doc.querySelector('title')?.textContent||doc.querySelector('h1,h2,h3')?.textContent||`Part ${loadedChapters.length+1}`).trim().substring(0,70);
+            const words=text.split(/\s+/).length;
+            loadedChapters.push({title,html:doc.body.innerHTML,text,mins:Math.round(words/200)});
+          }
+          showLoading(false);
+          if (loadedChapters.length) {
+            chapters = loadedChapters;
+            bookTitle = book.title;
+            epubCache[bookTitle] = { chapters };
+            // Update library entry driveFileId
+            const libIdx = library.findIndex(b => b.title === bookTitle);
+            if (libIdx >= 0 && !library[libIdx].driveFileId) {
+              library[libIdx].driveFileId = fileId; saveLibrary();
+            }
+            showToast('✓ Loaded from Drive');
+            showReader();
+            return;
+          }
+        }
+      } catch(e) { showLoading(false); }
+    }
   }
 
-  // Not in Drive either — ask user to re-upload
+  // 3. Not available
   document.getElementById('library-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   document.getElementById('drop-zone').classList.remove('hidden');
   document.getElementById('reader-scroll').classList.add('hidden');
   document.getElementById('player').classList.add('hidden');
-  document.getElementById('drop-zone').querySelector('p').textContent =
-    'Re-open "' + book.title + '" to continue from Chapter ' + (book.chapter+1);
   document.getElementById('book-name').textContent = book.title;
+
+  const dz = document.getElementById('drop-zone');
+  const msg = gdriveEnabled
+    ? '☁️ Drive disconnected. Reconnect to load "' + book.title + '" automatically.'
+    : 'Re-open "' + book.title + '" to continue from Chapter ' + (book.chapter+1);
+  dz.querySelector('p').textContent = msg;
+
+  // Show reconnect button if Drive was connected
+  let reconnBtn = dz.querySelector('.reconnect-btn');
+  if (!reconnBtn) {
+    reconnBtn = document.createElement('button');
+    reconnBtn.className = 'btn reconnect-btn';
+    reconnBtn.style.justifyContent = 'center';
+    dz.appendChild(reconnBtn);
+  }
+  if (gdriveEnabled) {
+    reconnBtn.textContent = '☁️ Reconnect Drive';
+    reconnBtn.style.display = '';
+    reconnBtn.onclick = async () => {
+      reconnBtn.textContent = 'Connecting...';
+      await signInGDrive();
+      if (isTokenValid()) openBookFromLibrary(idx);
+    };
+  } else {
+    reconnBtn.style.display = 'none';
+  }
 }
 
 // Handle lib file input
@@ -2354,7 +2567,11 @@ function doSignIn(resolve) {
         localStorage.setItem('gdrive_token', gdriveToken);
         localStorage.setItem('gdrive_expiry', gdriveExpiry);
         updateGDriveUI();
+        updateDriveStatusDot();
+        startReconnectChecker();
         showToast('☁️ Google Drive connected!');
+        // Push latest local progress to Drive immediately on reconnect
+        gdriveSavePosition();
         await gdriveLoadSaves();
         resolve(true);
       }
@@ -2522,13 +2739,17 @@ function attemptSilentAuth() {
       scope: GDRIVE_SCOPES,
       prompt: '', // empty = silent, no popup
       callback: async (resp) => {
-        if (resp.error) return; // silently fail
+        if (resp.error) return;
         gdriveToken = resp.access_token;
         gdriveExpiry = Date.now() + (resp.expires_in * 1000);
         gdriveEnabled = true;
         localStorage.setItem('gdrive_token', gdriveToken);
         localStorage.setItem('gdrive_expiry', gdriveExpiry);
         updateGDriveUI();
+        updateDriveStatusDot();
+        const bar=document.getElementById('drive-reconnect-bar'); if(bar) bar.style.display='none';
+        // Push any local progress that happened while disconnected
+        if (bookTitle) gdriveSavePosition();
         await gdriveRestoreOnLoad();
       }
     });
