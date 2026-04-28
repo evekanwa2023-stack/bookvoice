@@ -340,6 +340,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
         <button onclick="closeSheet('more-sheet');document.getElementById('file-input').click()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">+ Add EPUB</button>
         <button onclick="closeSheet('more-sheet');openSheet('dl-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">⬇ Download Audio</button>
         <button onclick="closeSheet('more-sheet');openSheet('sleep-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">⏱ Sleep Timer <span class="sleep-badge" id="sleep-badge" style="margin-left:4px"></span></button>
+        <button onclick="showServerStatus()" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)"><span>🔌 Server Status</span><span id="server-status-badge" style="font-size:12px;color:var(--muted)">Checking...</span></button>
         <button onclick="closeSheet('more-sheet');openSheet('findreplace-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">A→B Find &amp; Replace</button>
         <button onclick="closeSheet('more-sheet');openSheet('settings-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer">⚙ Settings</button>
       </div>
@@ -1157,8 +1158,8 @@ function nextCh(){const w=isPlaying;stopAudio();if(currentChapter<chapters.lengt
 
 function onSpeed(val){
   speed=parseFloat(val);
-  document.getElementById('speed-val').textContent=speed.toFixed(1)+'×';
-  document.getElementById('speed-val2').textContent=speed.toFixed(1)+'×';
+  document.getElementById('speed-val').textContent=speed.toFixed(2)+'×';
+  document.getElementById('speed-val2').textContent=speed.toFixed(2)+'×';
   document.getElementById('speed-sl').value=speed;
   document.getElementById('speed-sl2').value=speed;
   localStorage.setItem('tts_speed',speed);
@@ -1167,8 +1168,8 @@ function onSpeed(val){
 function applySpeeds(s){
   document.getElementById('speed-sl').value=s;
   document.getElementById('speed-sl2').value=s;
-  document.getElementById('speed-val').textContent=s.toFixed(1)+'×';
-  document.getElementById('speed-val2').textContent=s.toFixed(1)+'×';
+  document.getElementById('speed-val').textContent=s.toFixed(2)+'×';
+  document.getElementById('speed-val2').textContent=s.toFixed(2)+'×';
 }
 
 // ── FONT SIZE ──
@@ -1214,6 +1215,43 @@ function setStatus(s){
   else if(s==='paused'){dot.className='dot';txt.textContent='Paused';}
   else if(s==='done'){dot.className='dot';txt.textContent='Finished';}
 }
+
+function showServerStatus() {
+  const badge = document.getElementById('server-status-badge');
+  if (!serverUrl) { alert('No server connected.'); return; }
+  badge.textContent = 'Checking...';
+  fetch(serverUrl + '/ping', { signal: AbortSignal.timeout(5000) })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        badge.textContent = '✓ Online';
+        badge.style.color = 'var(--green)';
+        showToast('✓ Server is online — Emma is ready');
+      } else throw new Error();
+    })
+    .catch(() => {
+      badge.textContent = '✗ Offline';
+      badge.style.color = '#e07070';
+      showToast('✗ Server offline — get new Colab URL');
+    });
+  openSheet('more-sheet');
+}
+
+// Update badge whenever more sheet opens
+const _origOpen = window.openSheet;
+window.openSheet = function(id) {
+  _origOpen(id);
+  if (id === 'more-sheet') {
+    const badge = document.getElementById('server-status-badge');
+    if (badge && serverUrl) {
+      badge.textContent = lastPingOk ? '✓ Online' : '✗ Offline';
+      badge.style.color = lastPingOk ? 'var(--green)' : '#e07070';
+    }
+    if (id === 'findreplace-sheet') renderRules();
+  }
+  if (id === 'findreplace-sheet') renderRules();
+};
+
 function showLoading(on){document.getElementById('loading-bar').style.display=on?'block':'none';}
 
 // ── AUTO-HIDE PLAYER ──
