@@ -385,16 +385,31 @@ let wakeLock = null;
 let sleepTimer = null, sleepMinutes = 0, sleepEndChapter = false;
 let pendingResume = null;
 
+// ── EARLY STATE (needed before functions) ──
+let library = JSON.parse(localStorage.getItem('bv_library') || '[]');
+let pronounceRules = JSON.parse(localStorage.getItem('bv_pronounce') || '[]');
+let ruleScope = 'global';
+let paragraphs = [];
+let paraBuffer = {};
+let nextFetch = null;
+let audioCtx = null;
+
 // ── INIT ──
-applyFontSize(fontSize);
-applySpeeds(speed);
-if (serverUrl) {
-  // Go straight to library if we have books, else setup
-  if (library.length > 0) { showLibrary(); }
-  else { showResumeBanner(); showApp(); }
-} else {
-  // No server yet — show setup
-}
+// Defer init until DOM + all functions are ready
+window.addEventListener('DOMContentLoaded', () => {
+  applyFontSize(fontSize);
+  applySpeeds(speed);
+  updateGDriveUI();
+  if (serverUrl) {
+    if (library.length > 0) { showLibrary(); }
+    else { showResumeBanner(); showApp(); }
+  }
+  // Try silent Drive re-auth if previously connected
+  if (gdriveEnabled) {
+    if (isTokenValid()) { gdriveRestoreOnLoad(); }
+    else { silentReauth(); }
+  }
+});
 
 // ── WAKE LOCK ──
 async function requestWakeLock() {
@@ -689,7 +704,7 @@ function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(
 // While paragraph plays, uses word-timing to highlight sentences within it
 // Prefetches next paragraph while current one plays
 
-let paragraphs = []; // array of {sentences: [...], startIdx: N}
+// paragraphs declared above
 
 function buildParagraphs() {
   // Group sentences into chunks of ~3-5 sentences (natural paragraph units)
@@ -709,7 +724,7 @@ function findParagraphForSentence(sentIdx) {
   return 0;
 }
 
-let paraBuffer = {}; // paragraphIdx -> Promise<Audio>
+// paraBuffer declared above
 
 function prefetchPara(pIdx) {
   if (pIdx >= paragraphs.length || paraBuffer[pIdx]) return;
@@ -732,8 +747,7 @@ function updateSentCounter() {
 
 // ── PRONUNCIATION / FIND & REPLACE ──
 // Rules have scope: 'global' (all books) or 'book' (specific book title)
-let pronounceRules = JSON.parse(localStorage.getItem('bv_pronounce') || '[]');
-let ruleScope = 'global'; // current scope selection in UI
+// pronounceRules and ruleScope declared above
 
 function setRuleScope(scope) {
   ruleScope = scope;
@@ -844,8 +858,7 @@ function nextSentence() {
 // Use Web Audio API chaining so audio is queued with zero gap
 // Sentence highlighting uses word-count proportion of paragraph duration
 
-let audioCtx = null;
-let nextFetch = null; // Promise for next paragraph audio blob
+// audioCtx and nextFetch declared above
 
 function getAudioCtx() {
   if (!audioCtx || audioCtx.state === 'closed') {
@@ -1144,7 +1157,7 @@ function showLoading(on){document.getElementById('loading-bar').style.display=on
 // ── LIBRARY ──
 // Books stored in localStorage as metadata only (title, chapters count, progress)
 // Actual EPUB data stored in memory while app is open
-let library = JSON.parse(localStorage.getItem('bv_library') || '[]');
+// library declared above
 let epubCache = {}; // bookTitle -> {chapters, text}
 
 function saveLibrary() {
@@ -1509,16 +1522,7 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-// Init Drive UI and try restore
-updateGDriveUI();
-if (gdriveEnabled) {
-  if (isTokenValid()) {
-    gdriveRestoreOnLoad();
-  } else {
-    // Token expired — try silent re-auth
-    silentReauth();
-  }
-}
+// Drive init handled in DOMContentLoaded above
 
 async function silentReauth() {
   try {
