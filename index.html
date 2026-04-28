@@ -268,9 +268,23 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
           <span class="speed-val" id="speed-val2">1.7×</span>
         </div>
       </div>
-      <div class="setting-row" style="border:none">
+      <div class="setting-row">
         <label>Server URL</label>
         <button class="btn ghost" style="font-size:12px;padding:6px 12px" onclick="closeSheet('settings-sheet');changeServer()">Change</button>
+      </div>
+      <div class="setting-row">
+        <div>
+          <label>Clear Drive Cache</label>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">Delete all EPUBs stored in Drive</div>
+        </div>
+        <button class="btn danger" style="font-size:12px;padding:6px 12px" onclick="clearDriveCache()">Clear</button>
+      </div>
+      <div class="setting-row" style="border:none">
+        <div>
+          <label>Clear All Data</label>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">Reset library, settings, position</div>
+        </div>
+        <button class="btn danger" style="font-size:12px;padding:6px 12px" onclick="clearAllData()">Reset</button>
       </div>
     </div>
   </div>
@@ -337,11 +351,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
         <label class="toggle"><input type="checkbox" id="autohide-toggle" onchange="toggleAutoHide(this.checked)"><span class="toggle-slider"></span></label>
       </div>
       <div style="padding:8px 0">
-        <button onclick="closeSheet('more-sheet');document.getElementById('file-input').click()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">+ Add EPUB</button>
+        <button onclick="closeSheet('more-sheet');openSheet('sleep-sheet')" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)"><span>⏱ Sleep Timer</span><span class="sleep-badge" id="sleep-badge"></span></button>
+        <button onclick="showServerStatus()" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)"><span>🔌 Server Status</span><span id="server-status-badge" style="font-size:12px;color:var(--muted)">Tap to check</span></button>
         <button onclick="closeSheet('more-sheet');openSheet('dl-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">⬇ Download Audio</button>
-        <button onclick="closeSheet('more-sheet');openSheet('sleep-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">⏱ Sleep Timer <span class="sleep-badge" id="sleep-badge" style="margin-left:4px"></span></button>
-        <button onclick="showServerStatus()" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)"><span>🔌 Server Status</span><span id="server-status-badge" style="font-size:12px;color:var(--muted)">Checking...</span></button>
-        <button onclick="closeSheet('more-sheet');openSheet('findreplace-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">A→B Find &amp; Replace</button>
         <button onclick="closeSheet('more-sheet');openSheet('settings-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer">⚙ Settings</button>
       </div>
     </div>
@@ -393,9 +405,12 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
           <button class="ctrl-btn" onclick="locateSentence()" title="Go to current sentence">◎</button>
         </div>
         <div class="player-row2">
-          <span class="setting-lbl">Speed</span>
+          <button class="ctrl-btn" onclick="changeFontSize(-1)" style="width:28px;height:28px;font-size:11px;flex-shrink:0" title="Font size">A-</button>
+          <button class="ctrl-btn" onclick="changeFontSize(1)" style="width:28px;height:28px;font-size:11px;flex-shrink:0" title="Font size">A+</button>
+          <span class="setting-lbl" style="margin-left:4px">Speed</span>
           <input type="range" id="speed-sl" min="0.5" max="3.0" step="0.05" value="1.7" oninput="onSpeed(this.value)">
-          <span class="speed-val" id="speed-val">1.7×</span>
+          <span class="speed-val" id="speed-val">1.70×</span>
+          <button class="ctrl-btn" onclick="openSheet('findreplace-sheet')" style="width:28px;height:28px;font-size:11px;flex-shrink:0" title="Find & Replace">A→B</button>
         </div>
       </div>
     </div>
@@ -593,6 +608,8 @@ async function loadEpub(file) {
       library.unshift({ title: bookTitle, totalChapters: chapters.length, chapter: 0, sentence: 0 });
     }
     saveLibrary();
+    // Upload to Drive in background (don't await — don't block reading)
+    if (gdriveEnabled && isTokenValid()) driveUploadEpub(file, bookTitle);
 
     document.getElementById('book-name').textContent=bookTitle;
     document.getElementById('drop-zone').classList.add('hidden');
@@ -1304,6 +1321,47 @@ window.openSheet = function(id) {
   if (id === 'findreplace-sheet') renderRules();
 };
 
+
+function clearDriveCache() {
+  if (!confirm('Delete all EPUBs from Google Drive?\nYour reading progress will be kept.')) return;
+  if (!gdriveEnabled || !isTokenValid()) { showToast('Not connected to Drive'); return; }
+  showToast('Clearing Drive cache...');
+  // Find all epub files in appDataFolder and delete them
+  gdriveRequest('GET', "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=mimeType='application/epub%2Bzip'&fields=files(id,name)")
+    .then(r => {
+      const files = r?.files || [];
+      if (!files.length) { showToast('Drive cache already empty'); return; }
+      Promise.all(files.map(f =>
+        fetch('https://www.googleapis.com/drive/v3/files/' + f.id, {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + gdriveToken }
+        })
+      )).then(() => {
+        // Remove driveFileId from library entries
+        library.forEach(b => { delete b.driveFileId; });
+        saveLibrary();
+        showToast('✓ Drive cache cleared (' + files.length + ' files)');
+      });
+    })
+    .catch(() => showToast('Failed to clear cache'));
+}
+
+function clearAllData() {
+  if (!confirm('Reset everything?\nThis clears library, settings, reading position and Drive data.')) return;
+  // Clear Drive saves file
+  if (gdriveSaveFileId && gdriveEnabled && isTokenValid()) {
+    fetch('https://www.googleapis.com/drive/v3/files/' + gdriveSaveFileId, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + gdriveToken }
+    }).catch(()=>{});
+  }
+  // Clear localStorage
+  localStorage.clear();
+  // Reload
+  showToast('Cleared — reloading...');
+  setTimeout(() => location.reload(), 1500);
+}
+
 function showLoading(on){document.getElementById('loading-bar').style.display=on?'block':'none';}
 
 // ── AUTO-HIDE PLAYER ──
@@ -1381,6 +1439,84 @@ function resetHideTimer() {
 
 
 
+
+// ── GOOGLE DRIVE EPUB STORAGE ──
+// EPUBs saved to Drive appDataFolder so they persist across sessions
+
+async function driveUploadEpub(file, title) {
+  if (!gdriveEnabled || !isTokenValid()) return null;
+  try {
+    showToast('☁️ Saving "' + title + '" to Drive...');
+    // Check if already uploaded
+    const existing = await driveFindEpub(title);
+    if (existing) return existing; // already there
+
+    const meta = { name: title + '.epub', parents: ['appDataFolder'] };
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(meta)], {type:'application/json'}));
+    form.append('file', file);
+    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + gdriveToken },
+      body: form
+    });
+    const d = await r.json();
+    if (d.id) {
+      showToast('✓ Saved to Drive');
+      // Store file ID in library entry
+      const idx = library.findIndex(b => b.title === title);
+      if (idx >= 0) { library[idx].driveFileId = d.id; saveLibrary(); }
+      return d.id;
+    }
+  } catch(e) { console.log('Drive upload error:', e); }
+  return null;
+}
+
+async function driveFindEpub(title) {
+  if (!gdriveEnabled || !isTokenValid()) return null;
+  try {
+    const r = await gdriveRequest('GET',
+      "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='" + title + ".epub'&fields=files(id,name)");
+    if (r?.files?.length) return r.files[0].id;
+  } catch(e) {}
+  return null;
+}
+
+async function driveDownloadEpub(fileId) {
+  if (!gdriveEnabled || !isTokenValid()) return null;
+  try {
+    showToast('☁️ Loading from Drive...');
+    const r = await fetch(
+      'https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media',
+      { headers: { 'Authorization': 'Bearer ' + gdriveToken } }
+    );
+    if (!r.ok) return null;
+    const blob = await r.blob();
+    showToast('✓ Loaded from Drive');
+    return new File([blob], fileId + '.epub', {type: 'application/epub+zip'});
+  } catch(e) { return null; }
+}
+
+async function tryLoadFromDrive(book) {
+  // Try driveFileId stored in library first
+  let fileId = book.driveFileId;
+  if (!fileId) fileId = await driveFindEpub(book.title);
+  if (!fileId) return false;
+
+  // Update stored ID
+  const idx = library.findIndex(b => b.title === book.title);
+  if (idx >= 0 && !library[idx].driveFileId) {
+    library[idx].driveFileId = fileId; saveLibrary();
+  }
+
+  const file = await driveDownloadEpub(fileId);
+  if (!file) return false;
+
+  // Parse and load
+  await loadEpubFromLibrary(file);
+  return true;
+}
+
 // ── LIBRARY ──
 // Books stored in localStorage as metadata only (title, chapters count, progress)
 // Actual EPUB data stored in memory while app is open
@@ -1435,8 +1571,16 @@ function renderLibrary() {
 
 function deleteBook(e, idx) {
   e.stopPropagation();
-  if (!confirm('Remove "' + library[idx].title + '" from library?')) return;
-  delete epubCache[library[idx].title];
+  const book = library[idx];
+  if (!confirm('Remove "' + book.title + '" from library?\nThis will also delete it from Google Drive.')) return;
+  // Delete from Drive
+  if (book.driveFileId && gdriveEnabled && isTokenValid()) {
+    fetch('https://www.googleapis.com/drive/v3/files/' + book.driveFileId, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + gdriveToken }
+    }).catch(()=>{});
+  }
+  delete epubCache[book.title];
   library.splice(idx, 1);
   saveLibrary();
   renderLibrary();
@@ -1470,10 +1614,15 @@ async function openBookFromLibrary(idx) {
     return;
   }
 
-  // Not in cache — need to re-open file
+  // Not in cache — try Drive first
+  if (gdriveEnabled && isTokenValid()) {
+    const loaded = await tryLoadFromDrive(book);
+    if (loaded) return;
+  }
+
+  // Not in Drive either — ask user to re-upload
   document.getElementById('library-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
-  // Show drop zone with helpful message
   document.getElementById('drop-zone').classList.remove('hidden');
   document.getElementById('reader-scroll').classList.add('hidden');
   document.getElementById('player').classList.add('hidden');
@@ -1521,6 +1670,8 @@ async function loadEpubFromLibrary(file) {
     const title = file.name.replace('.epub','');
     // Cache in memory
     epubCache[title] = { chapters: loadedChapters };
+    // Upload to Drive in background if not already there
+    if (gdriveEnabled && isTokenValid()) driveUploadEpub(file, title);
 
     // Add to library or update existing
     const existing = library.findIndex(b => b.title === title);
