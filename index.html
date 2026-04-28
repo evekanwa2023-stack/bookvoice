@@ -188,12 +188,27 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 <audio id="bg-audio" playsinline webkit-playsinline style="display:none"></audio>
 <div class="sync-toast" id="sync-toast"></div>
 
+<!-- LIBRARY OPTIONS SHEET -->
+<div class="overlay" id="lib-options-sheet">
+  <div class="overlay-bg" onclick="closeSheet('lib-options-sheet')"></div>
+  <div class="sheet">
+    <div class="sheet-head"><span>Library Options</span><button class="sheet-close" onclick="closeSheet('lib-options-sheet')">×</button></div>
+    <div class="sheet-body">
+      <div style="padding:8px 0">
+        <button onclick="closeSheet('lib-options-sheet');showSetup()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">🔌 Change Server URL</button>
+        <button onclick="closeSheet('lib-options-sheet');clearDriveCache()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:#e07070;font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">☁️ Clear Drive Cache</button>
+        <button onclick="closeSheet('lib-options-sheet');clearAllData()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:#e07070;font-size:14px;font-family:inherit;cursor:pointer">🗑 Reset All Data</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- LIBRARY -->
 <div id="library-screen">
   <div class="lib-header">
     <span class="lib-title">📚 My Library</span>
     <button class="hbtn" onclick="document.getElementById('lib-file-input').click()">+ Add EPUB</button>
-    <button class="hbtn" onclick="showSetup()">Server</button>
+    <button class="hbtn" onclick="openSheet('lib-options-sheet')">⚙</button>
   </div>
   <div class="lib-scroll" id="lib-scroll">
     <div class="lib-empty" id="lib-empty">
@@ -254,6 +269,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
     <div class="sheet-head"><span>Settings</span><button class="sheet-close" onclick="closeSheet('settings-sheet')">×</button></div>
     <div class="sheet-body">
       <div class="setting-row">
+        <label>Auto-hide player bar</label>
+        <label class="toggle"><input type="checkbox" id="autohide-toggle" onchange="toggleAutoHide(this.checked)"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="setting-row">
         <label>Font Size</label>
         <div class="right">
           <button class="fs-btn" onclick="changeFontSize(-1)">−</button>
@@ -265,26 +284,12 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
         <label>Speed</label>
         <div class="right">
           <input type="range" id="speed-sl2" min="0.5" max="3.0" step="0.05" value="1.7" oninput="onSpeed(this.value)">
-          <span class="speed-val" id="speed-val2">1.7×</span>
+          <span class="speed-val" id="speed-val2">1.70×</span>
         </div>
       </div>
       <div class="setting-row">
         <label>Server URL</label>
         <button class="btn ghost" style="font-size:12px;padding:6px 12px" onclick="closeSheet('settings-sheet');changeServer()">Change</button>
-      </div>
-      <div class="setting-row">
-        <div>
-          <label>Clear Drive Cache</label>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">Delete all EPUBs stored in Drive</div>
-        </div>
-        <button class="btn danger" style="font-size:12px;padding:6px 12px" onclick="clearDriveCache()">Clear</button>
-      </div>
-      <div class="setting-row" style="border:none">
-        <div>
-          <label>Clear All Data</label>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">Reset library, settings, position</div>
-        </div>
-        <button class="btn danger" style="font-size:12px;padding:6px 12px" onclick="clearAllData()">Reset</button>
       </div>
     </div>
   </div>
@@ -346,10 +351,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
   <div class="sheet">
     <div class="sheet-head"><span>Options</span><button class="sheet-close" onclick="closeSheet('more-sheet')">×</button></div>
     <div class="sheet-body">
-      <div class="toggle-wrap">
-        <label>Auto-hide player bar</label>
-        <label class="toggle"><input type="checkbox" id="autohide-toggle" onchange="toggleAutoHide(this.checked)"><span class="toggle-slider"></span></label>
-      </div>
       <div style="padding:8px 0">
         <button onclick="closeSheet('more-sheet');openSheet('sleep-sheet')" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)"><span>⏱ Sleep Timer</span><span class="sleep-badge" id="sleep-badge"></span></button>
         <button onclick="showServerStatus()" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)"><span>🔌 Server Status</span><span id="server-status-badge" style="font-size:12px;color:var(--muted)">Tap to check</span></button>
@@ -1188,17 +1189,17 @@ function nextCh(){const w=isPlaying;stopAudio();if(currentChapter<chapters.lengt
 function onSpeed(val){
   speed=parseFloat(val);
   document.getElementById('speed-val').textContent=speed.toFixed(2)+'×';
-  document.getElementById('speed-val2').textContent=speed.toFixed(2)+'×';
+  const sv2=document.getElementById('speed-val2'); if(sv2) sv2.textContent=speed.toFixed(2)+'×';
   document.getElementById('speed-sl').value=speed;
-  document.getElementById('speed-sl2').value=speed;
+  const ss2=document.getElementById('speed-sl2'); if(ss2) ss2.value=speed;
   localStorage.setItem('tts_speed',speed);
   if(isPlaying){const i=sentenceIndex;stopAudio();setTimeout(()=>{isStopped=false;isPlaying=true;playFrom(i);},50);}
 }
 function applySpeeds(s){
   document.getElementById('speed-sl').value=s;
-  document.getElementById('speed-sl2').value=s;
+  const ss2b=document.getElementById('speed-sl2'); if(ss2b) ss2b.value=s;
   document.getElementById('speed-val').textContent=s.toFixed(2)+'×';
-  document.getElementById('speed-val2').textContent=s.toFixed(2)+'×';
+  const sv2b=document.getElementById('speed-val2'); if(sv2b) sv2b.textContent=s.toFixed(2)+'×';
 }
 
 // ── FONT SIZE ──
@@ -1209,7 +1210,7 @@ function changeFontSize(delta){
 }
 function applyFontSize(sz){
   document.documentElement.style.setProperty('--fs',sz+'px');
-  document.getElementById('fs-val').textContent=sz+'px';
+  const fv=document.getElementById('fs-val'); if(fv) fv.textContent=sz+'px';
 }
 
 // ── SLEEP TIMER ──
