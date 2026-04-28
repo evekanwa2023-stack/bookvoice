@@ -1246,15 +1246,25 @@ function updateServerBadge() {
   if (!badge) return;
   if (!serverUrl) { badge.textContent = 'Not connected'; badge.style.color = 'var(--muted)'; return; }
   if (!lastPingOk) { badge.textContent = '✗ Offline'; badge.style.color = '#e07070'; return; }
-  const t = getServerUptime();
-  if (!t) { badge.textContent = '✓ Online'; badge.style.color = 'var(--green)'; return; }
-  if (t.remainMins <= 30) {
-    badge.textContent = '⚠ ' + t.remainStr + ' left';
-    badge.style.color = '#e0a040';
-  } else {
-    badge.textContent = '✓ ' + t.remainStr + ' left';
-    badge.style.color = 'var(--green)';
-  }
+  // Try to get real time from server
+  fetch(serverUrl + '/status', { signal: AbortSignal.timeout(3000) })
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) throw new Error();
+      const remaining = d.remaining_seconds;
+      if (remaining < 30 * 60) {
+        badge.textContent = '⚠ ' + d.remaining_str + ' left';
+        badge.style.color = '#e0a040';
+        if (remaining < 10 * 60) showToast('⚠ Only ' + d.remaining_str + ' left on Colab!');
+      } else {
+        badge.textContent = '✓ ' + d.remaining_str + ' left';
+        badge.style.color = 'var(--green)';
+      }
+    })
+    .catch(() => {
+      badge.textContent = lastPingOk ? '✓ Online' : '✗ Offline';
+      badge.style.color = lastPingOk ? 'var(--green)' : '#e07070';
+    });
 }
 
 function showServerStatus() {
@@ -1266,7 +1276,7 @@ function showServerStatus() {
       if (d.ok) {
         let msg = '✓ Server online';
         if (t) msg += '\nRunning: ' + t.elapsedStr + '\nEst. remaining: ' + t.remainStr;
-        showToast('✓ Online · ' + (t ? t.remainStr + ' left' : 'running'));
+        showToast('✓ Server is online');
       } else throw new Error();
     })
     .catch(() => { showToast('✗ Server offline — get new Colab URL'); });
@@ -1557,10 +1567,6 @@ function stopConnectionMonitor() {
 
 async function pingServer() {
   if (!serverUrl) return;
-  // Warn at 30 mins remaining
-  const t = getServerUptime();
-  if (t && t.remainMins === 30) showToast('⚠ ~30 minutes left on Colab session');
-  if (t && t.remainMins === 10) showToast('⚠ ~10 minutes left! Get new Colab URL soon');
   try {
     const r = await fetch(serverUrl + '/ping', { signal: AbortSignal.timeout(5000) });
     const d = await r.json();
