@@ -531,6 +531,7 @@ function saveAndGo() {
   const url = document.getElementById('server-url').value.trim().replace(/\/$/,'');
   if (!url) { alert('Enter server URL first.'); return; }
   serverUrl=url; localStorage.setItem('tts_server',serverUrl);
+  recordServerStart();
   startConnectionMonitor();
   if (library.length > 0) showLibrary(); else showApp();
 }
@@ -1216,25 +1217,59 @@ function setStatus(s){
   else if(s==='done'){dot.className='dot';txt.textContent='Finished';}
 }
 
-function showServerStatus() {
+// Track when server was first connected
+let serverConnectedAt = parseInt(localStorage.getItem('bv_server_start') || '0');
+
+function recordServerStart() {
+  serverConnectedAt = Date.now();
+  localStorage.setItem('bv_server_start', serverConnectedAt);
+}
+
+function getServerUptime() {
+  if (!serverConnectedAt) return null;
+  const elapsed = Date.now() - serverConnectedAt;
+  const elapsedMins = Math.floor(elapsed / 60000);
+  const elapsedHrs = Math.floor(elapsedMins / 60);
+  const remainMins = Math.max(0, (12 * 60) - elapsedMins);
+  const remainHrs = Math.floor(remainMins / 60);
+  const remainMinsPart = remainMins % 60;
+  return {
+    elapsedMins, elapsedHrs,
+    remainMins, remainHrs, remainMinsPart,
+    elapsedStr: elapsedHrs > 0 ? elapsedHrs + 'h ' + (elapsedMins%60) + 'm' : elapsedMins + 'm',
+    remainStr: remainHrs > 0 ? remainHrs + 'h ' + remainMinsPart + 'm' : remainMins + 'm'
+  };
+}
+
+function updateServerBadge() {
   const badge = document.getElementById('server-status-badge');
-  if (!serverUrl) { alert('No server connected.'); return; }
-  badge.textContent = 'Checking...';
+  if (!badge) return;
+  if (!serverUrl) { badge.textContent = 'Not connected'; badge.style.color = 'var(--muted)'; return; }
+  if (!lastPingOk) { badge.textContent = '✗ Offline'; badge.style.color = '#e07070'; return; }
+  const t = getServerUptime();
+  if (!t) { badge.textContent = '✓ Online'; badge.style.color = 'var(--green)'; return; }
+  if (t.remainMins <= 30) {
+    badge.textContent = '⚠ ' + t.remainStr + ' left';
+    badge.style.color = '#e0a040';
+  } else {
+    badge.textContent = '✓ ' + t.remainStr + ' left';
+    badge.style.color = 'var(--green)';
+  }
+}
+
+function showServerStatus() {
+  if (!serverUrl) { showToast('No server connected'); return; }
+  const t = getServerUptime();
   fetch(serverUrl + '/ping', { signal: AbortSignal.timeout(5000) })
     .then(r => r.json())
     .then(d => {
       if (d.ok) {
-        badge.textContent = '✓ Online';
-        badge.style.color = 'var(--green)';
-        showToast('✓ Server is online — Emma is ready');
+        let msg = '✓ Server online';
+        if (t) msg += '\nRunning: ' + t.elapsedStr + '\nEst. remaining: ' + t.remainStr;
+        showToast('✓ Online · ' + (t ? t.remainStr + ' left' : 'running'));
       } else throw new Error();
     })
-    .catch(() => {
-      badge.textContent = '✗ Offline';
-      badge.style.color = '#e07070';
-      showToast('✗ Server offline — get new Colab URL');
-    });
-  openSheet('more-sheet');
+    .catch(() => { showToast('✗ Server offline — get new Colab URL'); });
 }
 
 // Update badge whenever more sheet opens
@@ -1242,11 +1277,7 @@ const _origOpen = window.openSheet;
 window.openSheet = function(id) {
   _origOpen(id);
   if (id === 'more-sheet') {
-    const badge = document.getElementById('server-status-badge');
-    if (badge && serverUrl) {
-      badge.textContent = lastPingOk ? '✓ Online' : '✗ Offline';
-      badge.style.color = lastPingOk ? 'var(--green)' : '#e07070';
-    }
+    updateServerBadge();
     if (id === 'findreplace-sheet') renderRules();
   }
   if (id === 'findreplace-sheet') renderRules();
@@ -1303,8 +1334,8 @@ function showPlayer() {
 document.addEventListener('DOMContentLoaded', () => {
   const readerScroll = document.getElementById('reader-scroll');
   if (readerScroll) {
+    // Show player on tap (non-sentence areas)
     readerScroll.addEventListener('click', (e) => {
-      // Only toggle if not clicking a sentence (sentence clicks handled separately)
       if (e.target.classList.contains('sentence')) return;
       if (!playerVisible) {
         showPlayer();
@@ -1312,6 +1343,12 @@ document.addEventListener('DOMContentLoaded', () => {
         scheduleHide();
       }
     });
+    // Show player when scrolling
+    readerScroll.addEventListener('scroll', () => {
+      if (autoHidePlayer) {
+        showPlayer();
+      }
+    }, { passive: true });
   }
   initAutoHide();
 });
@@ -1520,17 +1557,21 @@ function stopConnectionMonitor() {
 
 async function pingServer() {
   if (!serverUrl) return;
+  // Warn at 30 mins remaining
+  const t = getServerUptime();
+  if (t && t.remainMins === 30) showToast('⚠ ~30 minutes left on Colab session');
+  if (t && t.remainMins === 10) showToast('⚠ ~10 minutes left! Get new Colab URL soon');
   try {
     const r = await fetch(serverUrl + '/ping', { signal: AbortSignal.timeout(5000) });
     const d = await r.json();
     if (d.ok) {
       consecutiveFails = 0;
       if (!lastPingOk) {
-        // Reconnected!
         lastPingOk = true;
         showToast('✓ Server reconnected');
         updateServerStatus('ok');
       }
+      updateServerBadge();
     } else throw new Error();
   } catch(e) {
     consecutiveFails++;
