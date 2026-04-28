@@ -138,10 +138,21 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 
 @media(max-width:540px){.sidebar{display:none}.reader-body{font-size:var(--fs)}}
 .hidden{display:none!important}
+/* Google Drive sync */
+.gdrive-row{display:flex;align-items:center;gap:10px;margin-top:14px;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:10px}
+.gdrive-icon{font-size:20px;flex-shrink:0}
+.gdrive-info{flex:1;min-width:0}
+.gdrive-info p{font-size:12px;color:var(--muted);margin:0;line-height:1.4}
+.gdrive-info strong{font-size:13px;color:var(--text);display:block;margin-bottom:2px}
+.gdrive-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;flex-shrink:0;white-space:nowrap}
+.gdrive-btn.connected{border-color:#7aab8a;color:#7aab8a}
+.sync-toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 16px;font-size:12px;color:var(--muted);z-index:300;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+.sync-toast.show{opacity:1}
 </style>
 </head>
 <body>
 <div class="loading-bar" id="loading-bar"></div>
+<div class="sync-toast" id="sync-toast"></div>
 
 <!-- SETUP -->
 <div id="setup-screen">
@@ -164,7 +175,15 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       </div>
     </div>
     <hr class="div">
-    <p style="font-size:12px;margin:0">No account needed · Free forever</p>
+    <div class="gdrive-row">
+      <div class="gdrive-icon">☁️</div>
+      <div class="gdrive-info">
+        <strong id="gdrive-label">Google Drive Sync</strong>
+        <p id="gdrive-sublabel">Save position &amp; settings across devices</p>
+      </div>
+      <button class="gdrive-btn" id="gdrive-btn" onclick="toggleGDrive()">Connect</button>
+    </div>
+    <p style="font-size:12px;margin:8px 0 0">No account needed · Free forever</p>
   </div>
 </div>
 
@@ -271,13 +290,16 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
           <span class="prog-time" id="prog-time">0 / 0</span>
         </div>
         <div class="player-row1">
-          <button class="ctrl-btn" onclick="prevCh()">⏮</button>
+          <button class="ctrl-btn" onclick="prevCh()" title="Prev chapter">⏮</button>
+          <button class="ctrl-btn" onclick="prevSentence()" title="Prev sentence">⏪</button>
           <button class="ctrl-btn play-btn" id="play-btn" onclick="togglePlay()">▶</button>
-          <button class="ctrl-btn" onclick="nextCh()">⏭</button>
+          <button class="ctrl-btn" onclick="nextSentence()" title="Next sentence">⏩</button>
+          <button class="ctrl-btn" onclick="nextCh()" title="Next chapter">⏭</button>
           <div class="player-info">
             <div class="now-label"><span class="dot" id="dot"></span><span id="status-txt">Ready</span></div>
             <div class="now-ch" id="now-ch">—</div>
           </div>
+          <button class="ctrl-btn" onclick="locateSentence()" title="Go to current sentence">◎</button>
           <div class="setting">
             <input type="range" id="speed-sl" min="0.5" max="3.0" step="0.1" value="1.7" oninput="onSpeed(this.value)">
             <span class="speed-val" id="speed-val">1.7×</span>
@@ -297,7 +319,8 @@ let speed = parseFloat(localStorage.getItem('tts_speed') || '1.7');
 let fontSize = parseInt(localStorage.getItem('tts_fs') || '17');
 let isStopped = false;
 let sentences = [], sentenceEls = [], sentenceIndex = 0;
-let currentAudio = null, nextAudioPromise = null;
+let currentAudio = null;
+let audioBuffer = {}; // key: sentence index → Promise<Audio>
 let bookTitle = '';
 let wakeLock = null;
 let sleepTimer = null, sleepMinutes = 0, sleepEndChapter = false;
@@ -332,9 +355,32 @@ function updateMSChapter() {
 }
 
 // ── POSITION ──
+// Track furthest point reached (never goes backward)
+let furthestChapter = 0, furthestSentence = 0;
+
+function updateFurthest() {
+  if (currentChapter > furthestChapter ||
+     (currentChapter === furthestChapter && sentenceIndex > furthestSentence)) {
+    furthestChapter = currentChapter;
+    furthestSentence = sentenceIndex;
+  }
+}
+
 function savePosition() {
   if (!bookTitle) return;
-  localStorage.setItem('bv_pos', JSON.stringify({ book:bookTitle, chapter:currentChapter, sentence:sentenceIndex, ts:Date.now() }));
+  updateFurthest();
+  localStorage.setItem('bv_pos', JSON.stringify({
+    book: bookTitle,
+    // current = where you are right now (could be rereading earlier chapter)
+    chapter: currentChapter,
+    sentence: sentenceIndex,
+    // furthest = the most advanced point you've ever reached
+    furthestChapter,
+    furthestSentence,
+    ts: Date.now()
+  }));
+  // Save to Drive every 5 sentences
+  if (sentenceIndex % 5 === 0) gdriveSavePosition();
 }
 function loadSavedPos() { try { return JSON.parse(localStorage.getItem('bv_pos')); } catch { return null; } }
 function clearSavedPos() { localStorage.removeItem('bv_pos'); }
@@ -347,7 +393,11 @@ function showResumeBanner() {
   document.getElementById('resume-text').textContent = 'Resume "'+pos.book+'"?\nChapter '+(pos.chapter+1)+' · '+agoStr;
   document.getElementById('resume-banner').style.display = 'block';
 }
-function doResume() { pendingResume = loadSavedPos(); dismissResume(); }
+function doResume() {
+  const pos = loadSavedPos();
+  if (pos) pendingResume = { book: pos.book, chapter: pos.chapter, sentence: pos.sentence };
+  dismissResume();
+}
 function dismissResume() { document.getElementById('resume-banner').style.display='none'; }
 
 async function testConn() {
@@ -516,6 +566,7 @@ function loadChapter(i) {
   setSidebarActive(i);
   const body=document.getElementById('reader-body');
   body.innerHTML=chapters[i].html;
+  clearHighlight();
   document.getElementById('reader-scroll').scrollTop=0;
   document.getElementById('now-ch').textContent=chapters[i].title;
   const pct=chapters.length>1?(i/(chapters.length-1))*100:0;
@@ -561,26 +612,61 @@ function wrapSentences(container) {
 function splitSent(text){return(text.match(/[^.!?…]+[.!?…]*["\u2019\u201d]?\s*/g)||[text]).map(s=>s.trim()).filter(Boolean);}
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+const PREFETCH_AHEAD = 3; // preload this many sentences ahead
+
+function prefetchAhead(fromIdx) {
+  for (let j = fromIdx; j < Math.min(fromIdx + PREFETCH_AHEAD, sentences.length); j++) {
+    if (!audioBuffer[j]) audioBuffer[j] = prefetch(sentences[j]);
+  }
+}
+
+function clearBuffer() {
+  Object.values(audioBuffer).forEach(p => p.then(a => { try { a.src=''; } catch(e){} }));
+  audioBuffer = {};
+}
+
+// ── PREV / NEXT SENTENCE ──
+function prevSentence() {
+  const target = Math.max(0, sentenceIndex - 1);
+  const wasPlaying = isPlaying;
+  stopAudio();
+  if (wasPlaying) { isPlaying=true; document.getElementById('play-btn').textContent='⏸'; }
+  setTimeout(() => playFrom(target), 50);
+}
+function nextSentence() {
+  const target = Math.min(sentences.length - 1, sentenceIndex + 1);
+  const wasPlaying = isPlaying;
+  stopAudio();
+  if (wasPlaying) { isPlaying=true; document.getElementById('play-btn').textContent='⏸'; }
+  setTimeout(() => playFrom(target), 50);
+}
+
 // ── PLAYBACK ──
 async function playFrom(idx) {
   isStopped=false; sentenceIndex=idx;
   await requestWakeLock();
-  nextAudioPromise=idx<sentences.length?prefetch(sentences[idx]):null;
+
+  // Kick off prefetch buffer
+  prefetchAhead(idx);
 
   for(let i=idx;i<sentences.length;i++){
     if(isStopped) return;
     sentenceIndex=i; savePosition();
-    updateSentenceProgress(i);
     highlightSentence(i);
     setStatus('speaking');
 
-    const audio=await nextAudioPromise; nextAudioPromise=null;
-    if(i+1<sentences.length&&!isStopped) nextAudioPromise=prefetch(sentences[i+1]);
+    // Get audio from buffer (already fetching)
+    if (!audioBuffer[i]) audioBuffer[i] = prefetch(sentences[i]);
+    const audio = await audioBuffer[i];
+    delete audioBuffer[i];
+
+    // Prefetch more ahead
+    prefetchAhead(i + 1);
+
     if(isStopped) return;
     await playSentenceAudio(audio);
     if(isStopped) return;
 
-    // Sleep timer check
     if(sleepEndChapter){ /* handled at chapter end */ }
   }
 
@@ -598,13 +684,6 @@ async function playFrom(idx) {
       setStatus('done'); clearHighlight(); releaseWakeLock();
     }
   }
-}
-
-function updateSentenceProgress(i){
-  if(!sentences.length) return;
-  const pct=(i/sentences.length)*100;
-  // Show sentence progress within chapter on progress bar
-  // Keep chapter progress on time display
 }
 
 function prefetch(text){
@@ -631,12 +710,21 @@ function highlightSentence(i){
   el.classList.add('reading');
   el.scrollIntoView({block:'center',behavior:'smooth'});
 }
+function locateSentence(){
+  const el=sentenceEls[sentenceIndex];
+  if(!el) return;
+  el.scrollIntoView({block:'center',behavior:'smooth'});
+  // Flash it briefly so user can spot it
+  el.style.outline='2px solid var(--accent)';
+  setTimeout(()=>{ el.style.outline=''; },1000);
+}
 function clearHighlight(){sentenceEls.forEach(el=>el.classList.remove('reading'));}
 function stopAudio(){
   isStopped=true;
   if(currentAudio){try{currentAudio.pause();currentAudio.src='';}catch(e){}currentAudio=null;}
-  if(nextAudioPromise){nextAudioPromise.then(a=>{try{a.src='';}catch(e){}});nextAudioPromise=null;}
-  clearHighlight(); releaseWakeLock();
+  clearBuffer();
+  releaseWakeLock();
+  // NOTE: highlight intentionally kept so user can see where they paused
 }
 function stopReading(){
   isPlaying=false; stopAudio();
@@ -719,6 +807,219 @@ function setStatus(s){
   else if(s==='done'){dot.className='dot';txt.textContent='Finished';}
 }
 function showLoading(on){document.getElementById('loading-bar').style.display=on?'block':'none';}
+
+// ── GOOGLE DRIVE SYNC ──
+// Uses Google Identity Services + Drive REST API
+// Stores bookvoice-saves.json in Drive app data folder (hidden, only this app can see it)
+const GDRIVE_CLIENT_ID = '80533303528-2h05p622crn1opjp53pe252ln3uqh3rl.apps.googleusercontent.com'; // placeholder — see setup note
+const GDRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.appdata';
+let gdriveToken = localStorage.getItem('gdrive_token') || null;
+let gdriveExpiry = parseInt(localStorage.getItem('gdrive_expiry') || '0');
+let gdriveSaveFileId = localStorage.getItem('gdrive_file_id') || null;
+let gdriveEnabled = !!gdriveToken;
+
+// NOTE: To enable Google Drive sync you need a free Google Cloud project:
+// 1. Go to console.cloud.google.com
+// 2. Create project → Enable "Google Drive API"
+// 3. OAuth consent screen → External → add your email as test user
+// 4. Credentials → OAuth 2.0 Client ID → Web app
+// 5. Add https://evekanwa2023-stack.github.io as authorized origin
+// 6. Copy the Client ID and replace GDRIVE_CLIENT_ID above
+
+function isTokenValid() {
+  return gdriveToken && Date.now() < gdriveExpiry - 60000;
+}
+
+async function toggleGDrive() {
+  if (gdriveEnabled && isTokenValid()) {
+    // Disconnect
+    gdriveToken = null; gdriveExpiry = 0; gdriveEnabled = false;
+    localStorage.removeItem('gdrive_token');
+    localStorage.removeItem('gdrive_expiry');
+    updateGDriveUI();
+    showToast('Google Drive disconnected');
+  } else {
+    await signInGDrive();
+  }
+}
+
+function signInGDrive() {
+  return new Promise((resolve) => {
+    if (!window.google) {
+      showToast('Loading Google Sign-In...');
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = () => doSignIn(resolve);
+      document.head.appendChild(s);
+    } else {
+      doSignIn(resolve);
+    }
+  });
+}
+
+function doSignIn(resolve) {
+  try {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: GDRIVE_CLIENT_ID,
+      scope: GDRIVE_SCOPES,
+      callback: async (resp) => {
+        if (resp.error) { showToast('Sign-in failed: ' + resp.error); resolve(false); return; }
+        gdriveToken = resp.access_token;
+        gdriveExpiry = Date.now() + (resp.expires_in * 1000);
+        gdriveEnabled = true;
+        localStorage.setItem('gdrive_token', gdriveToken);
+        localStorage.setItem('gdrive_expiry', gdriveExpiry);
+        updateGDriveUI();
+        showToast('☁️ Google Drive connected!');
+        await gdriveLoadSaves();
+        resolve(true);
+      }
+    });
+    client.requestAccessToken();
+  } catch(e) {
+    showToast('Google Sign-in not configured yet');
+    resolve(false);
+  }
+}
+
+function updateGDriveUI() {
+  const btn = document.getElementById('gdrive-btn');
+  const label = document.getElementById('gdrive-label');
+  const sub = document.getElementById('gdrive-sublabel');
+  if (!btn) return;
+  if (gdriveEnabled && isTokenValid()) {
+    btn.textContent = 'Connected ✓';
+    btn.className = 'gdrive-btn connected';
+    label.textContent = 'Google Drive Sync';
+    sub.textContent = 'Position saved automatically';
+  } else {
+    btn.textContent = 'Connect';
+    btn.className = 'gdrive-btn';
+    label.textContent = 'Google Drive Sync';
+    sub.textContent = 'Save position & settings across devices';
+  }
+}
+
+async function gdriveRequest(method, url, body) {
+  if (!isTokenValid()) return null;
+  const opts = {
+    method,
+    headers: { 'Authorization': 'Bearer ' + gdriveToken }
+  };
+  if (body) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(url, opts);
+  if (!r.ok) return null;
+  return r.json();
+}
+
+async function gdriveFindFile() {
+  if (gdriveSaveFileId) return gdriveSaveFileId;
+  const r = await gdriveRequest('GET',
+    "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='bookvoice-saves.json'&fields=files(id,name)");
+  if (r?.files?.length) {
+    gdriveSaveFileId = r.files[0].id;
+    localStorage.setItem('gdrive_file_id', gdriveSaveFileId);
+  }
+  return gdriveSaveFileId;
+}
+
+async function gdriveLoadSaves() {
+  if (!gdriveEnabled || !isTokenValid()) return null;
+  try {
+    const fileId = await gdriveFindFile();
+    if (!fileId) return null;
+    const r = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      { headers: { 'Authorization': 'Bearer ' + gdriveToken } }
+    );
+    if (!r.ok) return null;
+    const data = await r.json();
+    showToast('☁️ Loaded from Drive');
+    return data;
+  } catch(e) { return null; }
+}
+
+async function gdriveSavePosition() {
+  if (!gdriveEnabled || !isTokenValid() || !bookTitle) return;
+  const saves = {
+    book: bookTitle,
+    // current position (where you are right now)
+    chapter: currentChapter,
+    sentence: sentenceIndex,
+    // furthest position ever reached
+    furthestChapter,
+    furthestSentence,
+    speed: speed,
+    fontSize: fontSize,
+    serverUrl: serverUrl,
+    ts: Date.now()
+  };
+  try {
+    const fileId = await gdriveFindFile();
+    const body = JSON.stringify(saves);
+    if (fileId) {
+      // Update existing file
+      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { 'Authorization': 'Bearer ' + gdriveToken, 'Content-Type': 'application/json' },
+        body
+      });
+    } else {
+      // Create new file in appDataFolder
+      const meta = { name: 'bookvoice-saves.json', parents: ['appDataFolder'] };
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(meta)], {type:'application/json'}));
+      form.append('file', new Blob([body], {type:'application/json'}));
+      const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + gdriveToken },
+        body: form
+      });
+      const d = await r.json();
+      if (d.id) {
+        gdriveSaveFileId = d.id;
+        localStorage.setItem('gdrive_file_id', d.id);
+      }
+    }
+  } catch(e) {}
+}
+
+async function gdriveRestoreOnLoad() {
+  if (!gdriveEnabled || !isTokenValid()) return;
+  const saves = await gdriveLoadSaves();
+  if (!saves) return;
+  // Restore server URL if different
+  if (saves.serverUrl && saves.serverUrl !== serverUrl) {
+    serverUrl = saves.serverUrl;
+    localStorage.setItem('tts_server', serverUrl);
+    document.getElementById('server-url').value = serverUrl;
+  }
+  if (saves.speed) { speed = saves.speed; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
+  if (saves.fontSize) { fontSize = saves.fontSize; applyFontSize(fontSize); localStorage.setItem('tts_fs', fontSize); }
+  // Show resume banner with Drive data
+  // Always restore to FURTHEST point reached, not current (in case user was rereading)
+  if (saves.book) {
+    const ago = Math.round((Date.now()-saves.ts)/60000);
+    const agoStr = ago < 60 ? ago+'m ago' : Math.round(ago/60)+'h ago';
+    document.getElementById('resume-text').textContent = '☁️ Resume "'+saves.book+'"?\nChapter '+(saves.chapter+1)+' · '+agoStr;
+    document.getElementById('resume-banner').style.display = 'block';
+    pendingResume = { book: saves.book, chapter: saves.chapter, sentence: saves.sentence };
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('sync-toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// Init Drive UI and try restore
+updateGDriveUI();
+if (gdriveEnabled && isTokenValid()) gdriveRestoreOnLoad();
+
 </script>
 </body>
 </html>
