@@ -351,12 +351,44 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
   <div class="sheet">
     <div class="sheet-head"><span>Options</span><button class="sheet-close" onclick="closeSheet('more-sheet')">×</button></div>
     <div class="sheet-body">
-      <div style="padding:8px 0">
+
+      <!-- SECTION 1: Reading controls — always visible -->
+      <div class="setting-row">
+        <label>Font Size</label>
+        <div class="right" style="gap:6px">
+          <button class="fs-btn" onclick="changeFontSize(-1)">−</button>
+          <input type="number" id="fs-input" min="10" max="32" value="17"
+            style="width:44px;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--accent);font-size:13px;padding:4px 2px;font-family:inherit"
+            onchange="setFontSizeInput(this.value)">
+          <button class="fs-btn" onclick="changeFontSize(1)">+</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <label>Speed</label>
+        <div class="right" style="gap:6px">
+          <button class="fs-btn" onclick="changeSpeedStep(-1)">−</button>
+          <input type="number" id="speed-input" min="0.5" max="3.0" step="0.05" value="1.70"
+            style="width:52px;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--accent);font-size:13px;padding:4px 2px;font-family:inherit"
+            onchange="setSpeedInput(this.value)">
+          <button class="fs-btn" onclick="changeSpeedStep(1)">+</button>
+        </div>
+      </div>
+      <div class="setting-row" style="border-bottom:2px solid var(--border)">
+        <label>A→B Find &amp; Replace</label>
+        <button class="btn ghost" style="font-size:12px;padding:6px 14px" onclick="closeSheet('more-sheet');openSheet('findreplace-sheet')">Open</button>
+      </div>
+
+      <!-- SECTION 2: More options — collapsed by default -->
+      <div id="more-extra" style="display:none">
         <button onclick="closeSheet('more-sheet');openSheet('sleep-sheet')" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)"><span>⏱ Sleep Timer</span><span class="sleep-badge" id="sleep-badge"></span></button>
         <button onclick="showServerStatus()" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)"><span>🔌 Server Status</span><span id="server-status-badge" style="font-size:12px;color:var(--muted)">Tap to check</span></button>
         <button onclick="closeSheet('more-sheet');openSheet('dl-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">⬇ Download Audio</button>
         <button onclick="closeSheet('more-sheet');openSheet('settings-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer">⚙ Settings</button>
       </div>
+      <button onclick="toggleMoreExtra()" id="more-extra-btn" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:12px 20px;background:none;border:none;color:var(--muted);font-size:13px;font-family:inherit;cursor:pointer">
+        <span>More options</span><span id="more-extra-arrow">▼</span>
+      </button>
+
     </div>
   </div>
 </div>
@@ -1362,6 +1394,55 @@ function clearAllData() {
   showToast('Cleared — reloading...');
   setTimeout(() => location.reload(), 1500);
 }
+
+
+function setFontSizeInput(val) {
+  const n = parseInt(val);
+  if (n >= 10 && n <= 32) { fontSize = n; applyFontSize(fontSize); localStorage.setItem('tts_fs', fontSize); }
+}
+
+function changeSpeedStep(dir) {
+  speed = Math.round(Math.min(3.0, Math.max(0.5, speed + dir * 0.05)) * 100) / 100;
+  applySpeeds(speed);
+  localStorage.setItem('tts_speed', speed);
+  const si = document.getElementById('speed-input'); if (si) si.value = speed.toFixed(2);
+  if (isPlaying) { const i=sentenceIndex; stopAudio(); setTimeout(()=>{ isStopped=false; isPlaying=true; playFrom(i); },50); }
+}
+
+function setSpeedInput(val) {
+  const n = Math.round(Math.min(3.0, Math.max(0.5, parseFloat(val))) * 100) / 100;
+  if (!isNaN(n)) { speed = n; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
+}
+
+function toggleMoreExtra() {
+  const el = document.getElementById('more-extra');
+  const arrow = document.getElementById('more-extra-arrow');
+  const btn = document.getElementById('more-extra-btn');
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    arrow.textContent = '▲';
+    btn.style.color = 'var(--text)';
+    updateServerBadge();
+  } else {
+    el.style.display = 'none';
+    arrow.textContent = '▼';
+    btn.style.color = 'var(--muted)';
+  }
+}
+
+// Sync number inputs when sheet opens
+const _moreOpen = window.openSheet;
+window.openSheet = function(id) {
+  _moreOpen(id);
+  if (id === 'more-sheet') {
+    const fi = document.getElementById('fs-input'); if (fi) fi.value = fontSize;
+    const si = document.getElementById('speed-input'); if (si) si.value = speed.toFixed(2);
+    // Reset extra section to collapsed
+    const extra = document.getElementById('more-extra'); if (extra) extra.style.display = 'none';
+    const arrow = document.getElementById('more-extra-arrow'); if (arrow) arrow.textContent = '▼';
+  }
+  if (id === 'findreplace-sheet') renderRules();
+};
 
 function showLoading(on){document.getElementById('loading-bar').style.display=on?'block':'none';}
 
