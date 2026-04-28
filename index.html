@@ -569,6 +569,8 @@ let pendingResume = null;
 
 // ── EARLY STATE (needed before functions) ──
 let library = JSON.parse(localStorage.getItem('bv_library') || '[]');
+// Clean up any duplicate entries on load
+setTimeout(() => deduplicateLibrary && deduplicateLibrary(), 500);
 let pronounceRules = JSON.parse(localStorage.getItem('bv_pronounce') || '[]');
 let ruleScope = 'global';
 let paragraphs = [];
@@ -731,7 +733,7 @@ async function loadEpub(file) {
       chapters.push({title,html:doc.body.innerHTML,text,mins});
     }
     if(!chapters.length){alert('Could not parse this EPUB.');return;}
-    bookTitle=file.name.replace('.epub','');
+    bookTitle=cleanBookTitle(file.name.replace('.epub',''));
     // Extract cover
     const coverUrl = await extractCover(zip, opfDir);
     if (coverUrl) {
@@ -1837,6 +1839,22 @@ function jumpToSentenceByIndex(sIdx, autoPlay) {
   }
 }
 
+
+function cleanBookTitle(raw) {
+  // Anna's Archive format: "Title -- Author -- Year -- ..."
+  // Take only the first part before " -- "
+  let t = raw.split(' -- ')[0].trim();
+  // Remove trailing underscores and clean up
+  t = t.replace(/_/g, ' ').trim();
+  // Remove content in parentheses at end if it looks like metadata
+  t = t.replace(/\s*\([^)]*\d{4}[^)]*\)\s*$/, '').trim();
+  // Remove hash-like suffixes (long hex strings)
+  t = t.replace(/\s+[0-9a-f]{8,}\s*$/i, '').trim();
+  // Capitalize first letter
+  if (t.length > 0) t = t.charAt(0).toUpperCase() + t.slice(1);
+  return t || raw;
+}
+
 function showLoading(on){document.getElementById('loading-bar').style.display=on?'block':'none';}
 
 // ── AUTO-HIDE PLAYER ──
@@ -1998,6 +2016,17 @@ async function tryLoadFromDrive(book) {
 // library declared above
 let epubCache = {}; // bookTitle -> {chapters, text}
 
+
+function deduplicateLibrary() {
+  const seen = new Set();
+  library = library.filter(b => {
+    if (seen.has(b.title)) return false;
+    seen.add(b.title);
+    return true;
+  });
+  saveLibrary();
+}
+
 function saveLibrary() {
   localStorage.setItem('bv_library', JSON.stringify(library));
 }
@@ -2144,7 +2173,7 @@ async function loadEpubFromLibrary(file) {
     }
     if(!loadedChapters.length){alert('Could not parse this EPUB.');return;}
 
-    const title = file.name.replace('.epub','');
+    const title = cleanBookTitle(file.name.replace('.epub',''));
     // Cache in memory
     epubCache[title] = { chapters: loadedChapters };
     // Upload to Drive in background if not already there
