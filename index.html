@@ -434,6 +434,7 @@ window.addEventListener('DOMContentLoaded', () => {
   applySpeeds(speed);
   updateGDriveUI();
   if (serverUrl) {
+    startConnectionMonitor();
     if (library.length > 0) { showLibrary(); }
     else { showResumeBanner(); showApp(); }
   }
@@ -529,6 +530,7 @@ function saveAndGo() {
   const url = document.getElementById('server-url').value.trim().replace(/\/$/,'');
   if (!url) { alert('Enter server URL first.'); return; }
   serverUrl=url; localStorage.setItem('tts_server',serverUrl);
+  startConnectionMonitor();
   if (library.length > 0) showLibrary(); else showApp();
 }
 function showApp() {
@@ -1443,6 +1445,63 @@ function updateLibraryProgress() {
     saveLibrary();
   }
 }
+
+
+// ── CONNECTION MONITOR ──
+// Pings server every 2 minutes, warns if connection drops
+let pingInterval = null;
+let lastPingOk = true;
+let consecutiveFails = 0;
+
+function startConnectionMonitor() {
+  if (pingInterval) clearInterval(pingInterval);
+  pingInterval = setInterval(pingServer, 2 * 60 * 1000); // every 2 min
+}
+
+function stopConnectionMonitor() {
+  if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+}
+
+async function pingServer() {
+  if (!serverUrl) return;
+  try {
+    const r = await fetch(serverUrl + '/ping', { signal: AbortSignal.timeout(5000) });
+    const d = await r.json();
+    if (d.ok) {
+      consecutiveFails = 0;
+      if (!lastPingOk) {
+        // Reconnected!
+        lastPingOk = true;
+        showToast('✓ Server reconnected');
+        updateServerStatus('ok');
+      }
+    } else throw new Error();
+  } catch(e) {
+    consecutiveFails++;
+    lastPingOk = false;
+    if (consecutiveFails === 1) {
+      showToast('⚠️ Server connection lost — get new Colab URL');
+      updateServerStatus('err');
+      // Pause if playing
+      if (isPlaying) stopReading();
+    }
+  }
+}
+
+function updateServerStatus(state) {
+  const dot = document.getElementById('dot');
+  const txt = document.getElementById('status-txt');
+  if (!dot || !txt) return;
+  if (state === 'err') {
+    dot.className = 'dot'; dot.style.background = '#e07070';
+    txt.textContent = 'Server disconnected';
+  } else if (state === 'ok') {
+    dot.style.background = '';
+    dot.className = isPlaying ? 'dot on' : 'dot';
+  }
+}
+
+// Start monitor when server is connected
 
 // ── GOOGLE DRIVE SYNC ──
 // Uses Google Identity Services + Drive REST API
