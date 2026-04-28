@@ -180,6 +180,30 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 .gdrive-btn.connected{border-color:#7aab8a;color:#7aab8a}
 .sync-toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 16px;font-size:12px;color:var(--muted);z-index:300;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
 .sync-toast.show{opacity:1}
+
+/* ── THEMES ── */
+body.theme-light{--bg:#f5f0e8;--surface:#ffffff;--surface2:#f0ebe0;--border:#ddd5c5;--text:#2c2418;--muted:#8a7d6b;--accent:#b8860b}
+body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b99a;--text:#3b2f18;--muted:#7a6a50;--accent:#8b6914}
+/* ── STATS ── */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:16px 20px}
+.stat-card{background:var(--surface2);border-radius:10px;padding:14px;text-align:center}
+.stat-val{font-size:22px;font-weight:600;color:var(--accent);display:block;margin-bottom:4px}
+.stat-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+/* ── BOOKMARKS ── */
+.bm-item{display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid var(--border);cursor:pointer}
+.bm-item:hover{background:var(--surface2)}
+.bm-text{flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bm-meta{font-size:11px;color:var(--muted);flex-shrink:0}
+.bm-del{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:0 4px;flex-shrink:0}
+/* ── SEARCH ── */
+.lib-search{padding:10px 16px;border-bottom:1px solid var(--border)}
+.lib-search input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;padding:8px 12px;font-family:inherit;outline:none}
+.lib-search input:focus{border-color:var(--accent)}
+/* ── COVER ── */
+.book-thumb img{width:100%;height:100%;object-fit:cover;border-radius:6px}
+/* ── CHAPTER DOWNLOAD progress ── */
+.dl-progress{height:3px;background:var(--border);border-radius:2px;margin-top:6px;overflow:hidden;display:none}
+.dl-progress-fill{height:100%;background:var(--accent);width:0%;transition:width .3s}
 </style>
 </head>
 <body>
@@ -195,9 +219,60 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
     <div class="sheet-head"><span>Library Options</span><button class="sheet-close" onclick="closeSheet('lib-options-sheet')">×</button></div>
     <div class="sheet-body">
       <div style="padding:8px 0">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)">
+          <label style="font-size:14px;color:var(--text)">Default Speed</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="fs-btn" onclick="changeDefaultSpeed(-1)">−</button>
+            <input type="number" id="lib-speed-input" min="0.5" max="3.0" step="0.05" value="1.70"
+              style="width:52px;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--accent);font-size:13px;padding:4px 2px;font-family:inherit"
+              onchange="setDefaultSpeed(this.value)">
+            <button class="fs-btn" onclick="changeDefaultSpeed(1)">+</button>
+          </div>
+        </div>
         <button onclick="closeSheet('lib-options-sheet');showSetup()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">🔌 Change Server URL</button>
         <button onclick="closeSheet('lib-options-sheet');clearDriveCache()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:#e07070;font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">☁️ Clear Drive Cache</button>
         <button onclick="closeSheet('lib-options-sheet');clearAllData()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:#e07070;font-size:14px;font-family:inherit;cursor:pointer">🗑 Reset All Data</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- BOOKMARKS SHEET -->
+<div class="overlay" id="bm-sheet">
+  <div class="overlay-bg" onclick="closeSheet('bm-sheet')"></div>
+  <div class="sheet">
+    <div class="sheet-head">
+      <span>Bookmarks</span>
+      <button class="sheet-close" onclick="closeSheet('bm-sheet')">×</button>
+    </div>
+    <div class="sheet-body" id="bm-list">
+      <p style="padding:20px;font-size:13px;color:var(--muted);text-align:center">No bookmarks yet.<br>Tap 🔖 while reading to add one.</p>
+    </div>
+  </div>
+</div>
+
+<!-- STATS SHEET -->
+<div class="overlay" id="stats-sheet">
+  <div class="overlay-bg" onclick="closeSheet('stats-sheet')"></div>
+  <div class="sheet">
+    <div class="sheet-head"><span>Reading Stats</span><button class="sheet-close" onclick="closeSheet('stats-sheet')">×</button></div>
+    <div class="sheet-body">
+      <div class="stats-grid" id="stats-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- THEME SHEET -->
+<div class="overlay" id="theme-sheet">
+  <div class="overlay-bg" onclick="closeSheet('theme-sheet')"></div>
+  <div class="sheet">
+    <div class="sheet-head"><span>Theme</span><button class="sheet-close" onclick="closeSheet('theme-sheet')">×</button></div>
+    <div class="sheet-body">
+      <div style="display:flex;gap:10px;padding:16px 20px;flex-wrap:wrap">
+        <button onclick="setTheme('dark')" style="flex:1;padding:16px 10px;border-radius:10px;border:2px solid var(--border);background:#13120f;color:#ede8df;font-size:13px;cursor:pointer;font-family:inherit;min-width:80px">🌙 Dark</button>
+        <button onclick="setTheme('sepia')" style="flex:1;padding:16px 10px;border-radius:10px;border:2px solid var(--border);background:#f4ecd8;color:#3b2f18;font-size:13px;cursor:pointer;font-family:inherit;min-width:80px">📜 Sepia</button>
+        <button onclick="setTheme('light')" style="flex:1;padding:16px 10px;border-radius:10px;border:2px solid var(--border);background:#f5f0e8;color:#2c2418;font-size:13px;cursor:pointer;font-family:inherit;min-width:80px">☀️ Light</button>
       </div>
     </div>
   </div>
@@ -210,6 +285,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
     <button class="hbtn" onclick="document.getElementById('lib-file-input').click()">+ Add EPUB</button>
     <button class="hbtn" onclick="openSheet('lib-options-sheet')">⚙</button>
   </div>
+  <div class="lib-search"><input type="text" placeholder="🔍 Search books..." oninput="filterLibrary(this.value)" id="lib-search-input"></div>
   <div class="lib-scroll" id="lib-scroll">
     <div class="lib-empty" id="lib-empty">
       <div class="drop-ring">📚</div>
@@ -383,6 +459,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
         <button onclick="closeSheet('more-sheet');openSheet('sleep-sheet')" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)"><span>⏱ Sleep Timer</span><span class="sleep-badge" id="sleep-badge"></span></button>
         <button onclick="showServerStatus()" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)"><span>🔌 Server Status</span><span id="server-status-badge" style="font-size:12px;color:var(--muted)">Tap to check</span></button>
         <button onclick="closeSheet('more-sheet');openSheet('dl-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">⬇ Download Audio</button>
+        <button onclick="closeSheet('more-sheet');openSheet('theme-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">🎨 Theme</button>
+        <button onclick="closeSheet('more-sheet');openSheet('stats-sheet');renderStats()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">📊 Reading Stats</button>
         <button onclick="closeSheet('more-sheet');openSheet('settings-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer">⚙ Settings</button>
       </div>
       <button onclick="toggleMoreExtra()" id="more-extra-btn" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:12px 20px;background:none;border:none;color:var(--muted);font-size:13px;font-family:inherit;cursor:pointer">
@@ -393,12 +471,34 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
   </div>
 </div>
 
+<!-- IN-BOOK SEARCH SHEET -->
+<div class="overlay" id="search-sheet">
+  <div class="overlay-bg" onclick="closeSheet('search-sheet')"></div>
+  <div class="sheet" style="max-height:80vh">
+    <div class="sheet-head">
+      <span>Search in Book</span>
+      <button class="sheet-close" onclick="closeSheet('search-sheet')">×</button>
+    </div>
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px">
+      <input type="text" id="book-search-input" placeholder="Search text..." 
+        style="flex:1;font-size:14px" 
+        oninput="searchInBook(this.value)"
+        autocorrect="off" autocapitalize="off">
+      <button class="btn ghost" style="padding:8px 12px;font-size:12px" onclick="document.getElementById('book-search-input').value='';searchInBook('')">✕</button>
+    </div>
+    <div style="padding:8px 12px;font-size:11px;color:var(--muted)" id="search-count"></div>
+    <div class="sheet-body" id="search-results" style="padding:0"></div>
+  </div>
+</div>
+
 <!-- APP -->
 <div id="app">
   <header>
     <button class="hbtn" onclick="showLibrary()" style="font-size:16px;border:none;padding:4px 6px">📚</button>
     <span class="book-name" id="book-name">No book loaded</span>
     <button class="hbtn" onclick="openSheet('ch-drawer')">☰</button>
+    <button class="hbtn" onclick="openSheet('bm-sheet');renderBookmarks()">🔖</button>
+    <button class="hbtn" onclick="openBookSearch()">🔍</button>
     <button class="hbtn" onclick="openSheet('more-sheet')">···</button>
   </header>
 
@@ -481,6 +581,7 @@ let audioCtx = null;
 window.addEventListener('DOMContentLoaded', () => {
   applyFontSize(fontSize);
   applySpeeds(speed);
+  applyTheme();
   updateGDriveUI();
   if (serverUrl) {
     startConnectionMonitor();
@@ -631,6 +732,12 @@ async function loadEpub(file) {
     }
     if(!chapters.length){alert('Could not parse this EPUB.');return;}
     bookTitle=file.name.replace('.epub','');
+    // Extract cover
+    const coverUrl = await extractCover(zip, opfDir);
+    if (coverUrl) {
+      const idx2 = library.findIndex(b => b.title === bookTitle);
+      if (idx2 >= 0) library[idx2].cover = coverUrl;
+    }
 
     // Save to epubCache and library
     epubCache[bookTitle] = { chapters };
@@ -1009,6 +1116,7 @@ function scheduleHighlights(para, firstSentIdx, duration) {
 
 async function playFrom(startSentIdx) {
   isStopped = false;
+  if (!sessionStart) startStatsSession();
   const mySession = ++playSession;
   sentenceIndex = startSentIdx;
   await requestWakeLock();
@@ -1174,6 +1282,7 @@ function highlightSentence(i){
   el.classList.add('reading');
   el.scrollIntoView({block:'center',behavior:'smooth'});
   updateSentCounter();
+  trackSentenceRead();
 }
 function locateSentence(){
   const el=sentenceEls[sentenceIndex];
@@ -1198,7 +1307,7 @@ function stopAudio(){
   // highlight kept so user sees where they paused
 }
 function stopReading(){
-  isPlaying=false; stopAudio();
+  isPlaying=false; endStatsSession(); stopAudio();
   document.getElementById('play-btn').textContent='▶';
   setStatus('paused');
   if('mediaSession' in navigator) navigator.mediaSession.playbackState='paused';
@@ -1243,6 +1352,7 @@ function changeFontSize(delta){
 function applyFontSize(sz){
   document.documentElement.style.setProperty('--fs',sz+'px');
   const fv=document.getElementById('fs-val'); if(fv) fv.textContent=sz+'px';
+  const fi=document.getElementById('fs-input'); if(fi) fi.value=sz;
 }
 
 // ── SLEEP TIMER ──
@@ -1444,6 +1554,289 @@ window.openSheet = function(id) {
   if (id === 'findreplace-sheet') renderRules();
 };
 
+
+function changeDefaultSpeed(dir) {
+  speed = Math.round(Math.min(3.0, Math.max(0.5, speed + dir * 0.05)) * 100) / 100;
+  applySpeeds(speed);
+  localStorage.setItem('tts_speed', speed);
+  const li = document.getElementById('lib-speed-input'); if (li) li.value = speed.toFixed(2);
+}
+function setDefaultSpeed(val) {
+  const n = Math.round(Math.min(3.0, Math.max(0.5, parseFloat(val))) * 100) / 100;
+  if (!isNaN(n)) { speed = n; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
+}
+// Sync lib speed input when library options sheet opens
+const _libOptOpen = window.openSheet;
+window.openSheet = function(id) {
+  _libOptOpen(id);
+  if (id === 'lib-options-sheet') {
+    const li = document.getElementById('lib-speed-input'); if (li) li.value = speed.toFixed(2);
+  }
+};
+
+
+// ── THEMES ──
+let currentTheme = localStorage.getItem('bv_theme') || 'dark';
+
+function setTheme(t) {
+  currentTheme = t;
+  localStorage.setItem('bv_theme', t);
+  document.body.className = t === 'dark' ? '' : 'theme-' + t;
+  closeSheet('theme-sheet');
+  showToast('Theme: ' + t.charAt(0).toUpperCase() + t.slice(1));
+}
+
+function applyTheme() {
+  document.body.className = currentTheme === 'dark' ? '' : 'theme-' + currentTheme;
+}
+
+// ── BOOKMARKS ──
+let bookmarks = JSON.parse(localStorage.getItem('bv_bookmarks') || '[]');
+// Each: { book, chapter, sentence, text, ts }
+
+function saveBookmarks() { localStorage.setItem('bv_bookmarks', JSON.stringify(bookmarks)); }
+
+function addBookmark() {
+  if (!bookTitle || !sentences.length) { showToast('Nothing to bookmark'); return; }
+  const text = sentences[sentenceIndex] || '';
+  const bm = {
+    book: bookTitle,
+    chapter: currentChapter,
+    chapterTitle: chapters[currentChapter]?.title || '',
+    sentence: sentenceIndex,
+    text: text.substring(0, 80) + (text.length > 80 ? '…' : ''),
+    ts: Date.now()
+  };
+  // Remove duplicate at same position
+  bookmarks = bookmarks.filter(b => !(b.book === bookTitle && b.chapter === currentChapter && b.sentence === sentenceIndex));
+  bookmarks.unshift(bm);
+  saveBookmarks();
+  showToast('🔖 Bookmark added');
+}
+
+function renderBookmarks() {
+  const el = document.getElementById('bm-list');
+  const forBook = bookmarks.filter(b => b.book === bookTitle);
+  if (!forBook.length) {
+    el.innerHTML = '<p style="padding:20px;font-size:13px;color:var(--muted);text-align:center">No bookmarks for this book yet.<br>Tap 🔖 while reading to add one.</p>';
+    return;
+  }
+  el.innerHTML = '';
+  forBook.forEach((bm, i) => {
+    const div = document.createElement('div');
+    div.className = 'bm-item';
+    div.innerHTML = `
+      <div style="flex:1;min-width:0">
+        <div class="bm-text">${escHtml(bm.text)}</div>
+        <div class="bm-meta">${escHtml(bm.chapterTitle)} · S${bm.sentence+1}</div>
+      </div>
+      <button class="bm-del" onclick="deleteBookmark(event,'${bm.book}',${bm.chapter},${bm.sentence})">×</button>
+    `;
+    div.onclick = (e) => {
+      if (e.target.classList.contains('bm-del')) return;
+      closeSheet('bm-sheet');
+      if (bm.chapter !== currentChapter) { stopAudio(); loadChapter(bm.chapter); }
+      setTimeout(() => {
+        sentenceIndex = bm.sentence;
+        highlightSentence(bm.sentence);
+        locateSentence();
+      }, 100);
+    };
+    el.appendChild(div);
+  });
+}
+
+function deleteBookmark(e, book, chapter, sentence) {
+  e.stopPropagation();
+  bookmarks = bookmarks.filter(b => !(b.book === book && b.chapter === chapter && b.sentence === sentence));
+  saveBookmarks();
+  renderBookmarks();
+}
+
+// ── READING STATS ──
+let readingStats = JSON.parse(localStorage.getItem('bv_stats') || '{"totalSeconds":0,"sentencesRead":0,"booksStarted":0,"booksFinished":0,"sessionsCount":0,"lastSession":0}');
+let sessionStart = null;
+
+function startStatsSession() {
+  sessionStart = Date.now();
+  readingStats.sessionsCount++;
+  saveStats();
+}
+
+function endStatsSession() {
+  if (!sessionStart) return;
+  const secs = Math.round((Date.now() - sessionStart) / 1000);
+  readingStats.totalSeconds += secs;
+  readingStats.lastSession = secs;
+  sessionStart = null;
+  saveStats();
+}
+
+function trackSentenceRead() {
+  readingStats.sentencesRead++;
+  if (readingStats.sentencesRead % 20 === 0) saveStats(); // save every 20
+}
+
+function saveStats() { localStorage.setItem('bv_stats', JSON.stringify(readingStats)); }
+
+function renderStats() {
+  const el = document.getElementById('stats-grid');
+  const hrs = Math.floor(readingStats.totalSeconds / 3600);
+  const mins = Math.floor((readingStats.totalSeconds % 3600) / 60);
+  const timeStr = hrs > 0 ? hrs + 'h ' + mins + 'm' : mins + 'm';
+  const avgWPM = readingStats.sentencesRead > 0 ? Math.round((readingStats.sentencesRead * 8) * speed) : 0;
+  el.innerHTML = `
+    <div class="stat-card"><span class="stat-val">${timeStr}</span><span class="stat-lbl">Total Listening</span></div>
+    <div class="stat-card"><span class="stat-val">${readingStats.sentencesRead.toLocaleString()}</span><span class="stat-lbl">Sentences Read</span></div>
+    <div class="stat-card"><span class="stat-val">${readingStats.sessionsCount}</span><span class="stat-lbl">Sessions</span></div>
+    <div class="stat-card"><span class="stat-val">${library.length}</span><span class="stat-lbl">Books in Library</span></div>
+  `;
+}
+
+// ── LIBRARY SEARCH ──
+function filterLibrary(query) {
+  const q = query.toLowerCase().trim();
+  const cards = document.querySelectorAll('#lib-scroll .book-card');
+  cards.forEach(card => {
+    const title = card.querySelector('h3')?.textContent.toLowerCase() || '';
+    card.style.display = (!q || title.includes(q)) ? '' : 'none';
+  });
+}
+
+// ── BOOK COVER EXTRACTION ──
+async function extractCover(zip, opfDir) {
+  try {
+    // Look for cover image in manifest
+    const opfPath = opfDir ? opfDir.replace(/\/$/, '') + '/content.opf' : 'content.opf';
+    // Try common cover filenames
+    const candidates = ['cover.jpg','cover.jpeg','cover.png','images/cover.jpg','images/cover.png','OEBPS/cover.jpg','OEBPS/images/cover.jpg'];
+    for (const c of candidates) {
+      const f = zip.file(c);
+      if (f) {
+        const data = await f.async('base64');
+        const ext = c.split('.').pop();
+        return 'data:image/' + ext + ';base64,' + data;
+      }
+    }
+    // Search zip for any file named cover.*
+    const keys = Object.keys(zip.files).filter(k => /cover\.(jpg|jpeg|png)/i.test(k));
+    if (keys.length) {
+      const data = await zip.file(keys[0]).async('base64');
+      const ext = keys[0].split('.').pop();
+      return 'data:image/' + ext + ';base64,' + data;
+    }
+  } catch(e) {}
+  return null;
+}
+
+
+// ── IN-BOOK TEXT SEARCH ──
+let searchResults = []; // [{chapterIdx, sentenceIdx, text, matchStart, matchLen}]
+let lastSearchQuery = '';
+
+function openBookSearch() {
+  if (!chapters.length) { showToast('Open a book first'); return; }
+  openSheet('search-sheet');
+  setTimeout(() => document.getElementById('book-search-input')?.focus(), 300);
+}
+
+function searchInBook(query) {
+  const el = document.getElementById('search-results');
+  const countEl = document.getElementById('search-count');
+  lastSearchQuery = query.trim();
+
+  if (!lastSearchQuery || lastSearchQuery.length < 2) {
+    el.innerHTML = '';
+    countEl.textContent = '';
+    return;
+  }
+
+  searchResults = [];
+  const q = lastSearchQuery.toLowerCase();
+
+  // Search all chapters
+  chapters.forEach((ch, chIdx) => {
+    const text = ch.text;
+    const textLower = text.toLowerCase();
+    // Split into sentences for context
+    const sents = text.match(/[^.!?…]+[.!?…]*["'\u2019\u201d]?\s*/g) || [text];
+    let charPos = 0;
+    sents.forEach((sent, sIdx) => {
+      const sentLower = sent.toLowerCase();
+      let pos = sentLower.indexOf(q);
+      while (pos !== -1 && searchResults.length < 200) {
+        searchResults.push({
+          chapterIdx: chIdx,
+          chapterTitle: ch.title,
+          sentenceIdx: sIdx,
+          text: sent.trim(),
+          matchStart: pos,
+          matchLen: q.length
+        });
+        pos = sentLower.indexOf(q, pos + 1);
+      }
+      charPos += sent.length;
+    });
+  });
+
+  countEl.textContent = searchResults.length === 0 ? 'No results' :
+    searchResults.length + ' result' + (searchResults.length !== 1 ? 's' : '') +
+    (searchResults.length >= 200 ? ' (showing first 200)' : '');
+
+  // Render results
+  el.innerHTML = '';
+  if (!searchResults.length) return;
+
+  searchResults.forEach((r, i) => {
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer';
+    div.addEventListener('mouseover', () => div.style.background = 'var(--surface2)');
+    div.addEventListener('mouseout', () => div.style.background = '');
+
+    // Highlight match in text
+    const before = escHtml(r.text.substring(0, r.matchStart));
+    const match = escHtml(r.text.substring(r.matchStart, r.matchStart + r.matchLen));
+    const after = escHtml(r.text.substring(r.matchStart + r.matchLen, r.matchStart + r.matchLen + 80));
+    const snippet = before + '<mark style="background:rgba(212,168,75,.4);color:var(--text);border-radius:2px;padding:0 1px">' + match + '</mark>' + after + (r.text.length > r.matchStart + r.matchLen + 80 ? '…' : '');
+
+    div.innerHTML = `
+      <div style="font-size:11px;color:var(--accent);margin-bottom:4px">${escHtml(r.chapterTitle)}</div>
+      <div style="font-size:13px;color:var(--text);line-height:1.5">${snippet}</div>
+    `;
+
+    div.onclick = () => {
+      closeSheet('search-sheet');
+      jumpToSearchResult(r);
+    };
+    el.appendChild(div);
+  });
+}
+
+function jumpToSearchResult(r) {
+  // Navigate to chapter if needed
+  if (r.chapterIdx !== currentChapter) {
+    const wasPlaying = isPlaying;
+    stopAudio();
+    loadChapter(r.chapterIdx);
+    setTimeout(() => {
+      jumpToSentenceByIndex(r.sentenceIdx, wasPlaying);
+    }, 150);
+  } else {
+    jumpToSentenceByIndex(r.sentenceIdx, false);
+  }
+}
+
+function jumpToSentenceByIndex(sIdx, autoPlay) {
+  sentenceIndex = Math.min(sIdx, sentences.length - 1);
+  highlightSentence(sentenceIndex);
+  locateSentence();
+  if (autoPlay) {
+    isPlaying = true;
+    document.getElementById('play-btn').textContent = '⏸';
+    setTimeout(() => playFrom(sentenceIndex), 100);
+  }
+}
+
 function showLoading(on){document.getElementById('loading-bar').style.display=on?'block':'none';}
 
 // ── AUTO-HIDE PLAYER ──
@@ -1637,8 +2030,10 @@ function renderLibrary() {
     const card = document.createElement('div');
     card.className = 'book-card';
     const pct = book.totalChapters > 1 ? Math.round((book.chapter / (book.totalChapters-1))*100) : 0;
-    card.innerHTML = `
-      <div class="book-thumb">📖</div>
+    const thumbHtml = book.cover
+      ? `<div class="book-thumb"><img src="${book.cover}" alt="cover"></div>`
+      : `<div class="book-thumb">📖</div>`;
+    card.innerHTML = thumbHtml + `
       <div class="book-info">
         <h3>${escHtml(book.title)}</h3>
         <p>Ch ${book.chapter+1} of ${book.totalChapters} · ${pct}% complete</p>
