@@ -955,10 +955,23 @@ async function playFrom(startSentIdx) {
   let pIdx = findParagraphForSentence(startSentIdx);
   const audio = getBgAudio();
 
+  // For the FIRST paragraph, only fetch from the tapped sentence onwards
+  // This ensures Emma reads exactly from where you tapped, not from paragraph start
+  const firstPara = paragraphs[pIdx];
+  const firstSentInPara = firstPara ? firstPara.startIdx : 0;
+  let firstParaText;
+  if (startSentIdx > firstSentInPara && firstPara) {
+    // Trim the paragraph to start from tapped sentence
+    const trimmedSents = sentences.slice(startSentIdx, firstPara.startIdx + firstPara.count);
+    firstParaText = trimmedSents.join(' ');
+  } else {
+    firstParaText = firstPara?.text || '';
+  }
+
   // Fetch first blob
   let currentBlobUrl = null;
   try {
-    currentBlobUrl = await fetchAudioBlob(applyPronunciation(paragraphs[pIdx]?.text || ''));
+    currentBlobUrl = await fetchAudioBlob(applyPronunciation(firstParaText));
   } catch(e) { return; }
 
   if (isStopped || mySession !== playSession) {
@@ -978,6 +991,12 @@ async function playFrom(startSentIdx) {
     const para = paragraphs[pIdx];
     const firstSent = Math.max(startSentIdx, para.startIdx);
 
+    // For trimmed first paragraph, create a virtual para with correct sentence range
+    const isFirstPara = (pIdx === findParagraphForSentence(startSentIdx) && startSentIdx > para.startIdx);
+    const effectivePara = isFirstPara
+      ? { startIdx: startSentIdx, count: para.count - (startSentIdx - para.startIdx), text: firstParaText }
+      : para;
+
     // Set audio src and play
     audio.src = currentBlobUrl;
     currentAudio = audio;
@@ -994,16 +1013,15 @@ async function playFrom(startSentIdx) {
     }
 
     // Schedule highlights using duration estimate (words/speed)
-    // Use a generous estimate before we know real duration
-    const estDuration = (para.text.split(/\s+/).length / (speed * 2.5)) * 1000;
-    scheduleHighlights(para, firstSent, estDuration);
+    const estDuration = (effectivePara.text.split(/\s+/).length / (speed * 2.5)) * 1000;
+    scheduleHighlights(effectivePara, firstSent, estDuration);
 
     // Actually play
     try { await audio.play(); } catch(e) {}
 
     // Refine highlights once we know real duration
     if (audio.duration && !isNaN(audio.duration)) {
-      scheduleHighlights(para, firstSent, audio.duration * 1000);
+      scheduleHighlights(effectivePara, firstSent, audio.duration * 1000);
     }
 
     sentenceIndex = firstSent;
