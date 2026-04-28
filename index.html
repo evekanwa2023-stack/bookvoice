@@ -96,7 +96,10 @@ header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1
 .setting label{font-size:11px;color:var(--muted);white-space:nowrap}
 input[type=range]{-webkit-appearance:none;width:90px;height:4px;background:var(--border);border-radius:2px;outline:none;border:none;padding:0}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
-.speed-val{font-size:11px;color:var(--accent);min-width:32px}
+.speed-val{font-size:12px;color:var(--accent);min-width:34px;font-weight:500}
+.player-row2{display:flex;align-items:center;gap:10px;padding:6px 0 2px}
+.setting-lbl{font-size:11px;color:var(--muted);flex-shrink:0}
+.player-row2 input[type=range]{flex:1}
 /* sleep timer badge */
 .sleep-badge{font-size:11px;color:var(--accent);background:var(--accent-dim);border-radius:10px;padding:2px 8px;display:none}
 .sleep-badge.on{display:inline-block}
@@ -138,6 +141,23 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 
 @media(max-width:540px){.sidebar{display:none}.reader-body{font-size:var(--fs)}}
 .hidden{display:none!important}
+/* Library page */
+#library-screen{flex:1;display:none;flex-direction:column;overflow:hidden;height:100dvh}
+.lib-header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.lib-title{font-family:'Lora',serif;font-size:18px;color:var(--accent);flex:1}
+.lib-scroll{flex:1;overflow-y:auto;padding:16px}
+.lib-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;height:100%;text-align:center;color:var(--muted);font-size:14px}
+.lib-empty .drop-ring{margin-bottom:4px}
+.book-card{display:flex;align-items:center;gap:14px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;cursor:pointer;transition:all .15s}
+.book-card:hover,.book-card:active{border-color:var(--accent);background:var(--surface2)}
+.book-thumb{width:48px;height:64px;background:var(--surface2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;border:1px solid var(--border)}
+.book-info{flex:1;min-width:0}
+.book-info h3{font-size:14px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+.book-info p{font-size:11px;color:var(--muted)}
+.book-prog{height:3px;background:var(--border);border-radius:2px;margin-top:6px;overflow:hidden}
+.book-prog-fill{height:100%;background:var(--accent);border-radius:2px}
+.book-del{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0}
+.book-del:hover{color:#e07070}
 /* Google Drive sync */
 .gdrive-row{display:flex;align-items:center;gap:10px;margin-top:14px;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:10px}
 .gdrive-icon{font-size:20px;flex-shrink:0}
@@ -153,6 +173,23 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 <body>
 <div class="loading-bar" id="loading-bar"></div>
 <div class="sync-toast" id="sync-toast"></div>
+
+<!-- LIBRARY -->
+<div id="library-screen">
+  <div class="lib-header">
+    <span class="lib-title">📚 My Library</span>
+    <button class="hbtn" onclick="document.getElementById('lib-file-input').click()">+ Add EPUB</button>
+    <button class="hbtn" onclick="showSetup()">Server</button>
+  </div>
+  <div class="lib-scroll" id="lib-scroll">
+    <div class="lib-empty" id="lib-empty">
+      <div class="drop-ring">📚</div>
+      <p>No books yet.<br>Tap + Add EPUB to get started.</p>
+      <button class="btn" style="justify-content:center" onclick="document.getElementById('lib-file-input').click()">+ Add EPUB</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="lib-file-input" accept=".epub" style="display:none">
 
 <!-- SETUP -->
 <div id="setup-screen">
@@ -255,6 +292,26 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
   </div>
 </div>
 
+<!-- FIND & REPLACE SHEET -->
+<div class="overlay" id="findreplace-sheet">
+  <div class="overlay-bg" onclick="closeSheet('findreplace-sheet')"></div>
+  <div class="sheet" style="max-height:85vh">
+    <div class="sheet-head"><span>Find &amp; Replace</span><button class="sheet-close" onclick="closeSheet('findreplace-sheet')">×</button></div>
+    <div class="sheet-body" style="padding:16px 20px">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">Fix pronunciation or replace any text. Rules apply while Emma reads.</p>
+      <input type="text" id="fr-find" placeholder="Find (e.g. Kloe)" style="width:100%;margin-bottom:8px;font-size:14px">
+      <input type="text" id="fr-replace" placeholder="Replace with (e.g. Cloe)" style="width:100%;margin-bottom:8px;font-size:14px">
+      <div style="display:flex;gap:8px;margin-bottom:14px;background:var(--surface2);border-radius:8px;padding:4px">
+        <button id="scope-global-btn" onclick="setRuleScope('global')" style="flex:1;padding:7px;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;background:var(--accent);color:#13120f;font-weight:500">All books</button>
+        <button id="scope-book-btn" onclick="setRuleScope('book')" style="flex:1;padding:7px;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;background:none;color:var(--muted)">This book only</button>
+      </div>
+      <button class="btn" style="width:100%;justify-content:center;margin-bottom:16px" onclick="addReplaceRule()">+ Add Rule</button>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.1em">Active Rules</div>
+      <div id="fr-rules" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+  </div>
+</div>
+
 <!-- APP -->
 <div id="app">
   <header>
@@ -264,6 +321,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
     <button class="hbtn" onclick="document.getElementById('file-input').click()">+ EPUB</button>
     <button class="hbtn" onclick="openSheet('dl-sheet')">⬇</button>
     <button class="hbtn" onclick="openSheet('sleep-sheet')">⏱ <span class="sleep-badge" id="sleep-badge"></span></button>
+    <button class="hbtn" onclick="openSheet('findreplace-sheet')">A→B</button>
     <button class="hbtn" onclick="openSheet('settings-sheet')">⚙</button>
   </header>
 
@@ -287,7 +345,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
           <div class="prog-bar" onclick="seekClick(event,this)">
             <div class="prog-fill" id="prog-fill"></div>
           </div>
-          <span class="prog-time" id="prog-time">0 / 0</span>
+          <span class="prog-time" id="prog-time">S 0 / 0</span>
         </div>
         <div class="player-row1">
           <button class="ctrl-btn" onclick="prevCh()" title="Prev chapter">⏮</button>
@@ -300,10 +358,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
             <div class="now-ch" id="now-ch">—</div>
           </div>
           <button class="ctrl-btn" onclick="locateSentence()" title="Go to current sentence">◎</button>
-          <div class="setting">
-            <input type="range" id="speed-sl" min="0.5" max="3.0" step="0.1" value="1.7" oninput="onSpeed(this.value)">
-            <span class="speed-val" id="speed-val">1.7×</span>
-          </div>
+        </div>
+        <div class="player-row2">
+          <span class="setting-lbl">Speed</span>
+          <input type="range" id="speed-sl" min="0.5" max="3.0" step="0.1" value="1.7" oninput="onSpeed(this.value)">
+          <span class="speed-val" id="speed-val">1.7×</span>
         </div>
       </div>
     </div>
@@ -329,7 +388,13 @@ let pendingResume = null;
 // ── INIT ──
 applyFontSize(fontSize);
 applySpeeds(speed);
-if (serverUrl) { showResumeBanner(); showApp(); }
+if (serverUrl) {
+  // Go straight to library if we have books, else setup
+  if (library.length > 0) { showLibrary(); }
+  else { showResumeBanner(); showApp(); }
+} else {
+  // No server yet — show setup
+}
 
 // ── WAKE LOCK ──
 async function requestWakeLock() {
@@ -380,6 +445,7 @@ function savePosition() {
     ts: Date.now()
   }));
   // Save to Drive every 5 sentences
+  updateLibraryProgress();
   if (sentenceIndex % 5 === 0) gdriveSavePosition();
 }
 function loadSavedPos() { try { return JSON.parse(localStorage.getItem('bv_pos')); } catch { return null; } }
@@ -414,9 +480,14 @@ async function testConn() {
 function saveAndGo() {
   const url = document.getElementById('server-url').value.trim().replace(/\/$/,'');
   if (!url) { alert('Enter server URL first.'); return; }
-  serverUrl=url; localStorage.setItem('tts_server',serverUrl); showApp();
+  serverUrl=url; localStorage.setItem('tts_server',serverUrl);
+  if (library.length > 0) showLibrary(); else showApp();
 }
-function showApp() { document.getElementById('setup-screen').style.display='none'; document.getElementById('app').style.display='flex'; }
+function showApp() {
+  document.getElementById('setup-screen').style.display='none';
+  document.getElementById('library-screen').style.display='none';
+  document.getElementById('app').style.display='flex';
+}
 function changeServer() { document.getElementById('server-url').value=serverUrl; document.getElementById('app').style.display='none'; document.getElementById('setup-screen').style.display='flex'; showResumeBanner(); }
 
 // ── SHEETS ──
@@ -574,6 +645,7 @@ function loadChapter(i) {
   document.getElementById('prog-time').textContent=(i+1)+' / '+chapters.length;
   wrapSentences(body);
   updateMSChapter();
+  updateSentCounter();
 }
 function jumpTo(i) {
   const w=isPlaying; stopAudio(); loadChapter(i);
@@ -612,18 +684,144 @@ function wrapSentences(container) {
 function splitSent(text){return(text.match(/[^.!?…]+[.!?…]*["\u2019\u201d]?\s*/g)||[text]).map(s=>s.trim()).filter(Boolean);}
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
-const PREFETCH_AHEAD = 3; // preload this many sentences ahead
+// ── PARAGRAPH-LEVEL PLAYBACK (no gaps between sentences) ──
+// Groups sentences into paragraphs, fetches each paragraph as one audio request
+// While paragraph plays, uses word-timing to highlight sentences within it
+// Prefetches next paragraph while current one plays
 
-function prefetchAhead(fromIdx) {
-  for (let j = fromIdx; j < Math.min(fromIdx + PREFETCH_AHEAD, sentences.length); j++) {
-    if (!audioBuffer[j]) audioBuffer[j] = prefetch(sentences[j]);
+let paragraphs = []; // array of {sentences: [...], startIdx: N}
+
+function buildParagraphs() {
+  // Group sentences into chunks of ~3-5 sentences (natural paragraph units)
+  paragraphs = [];
+  const GROUP = 4; // sentences per audio request
+  for (let i = 0; i < sentences.length; i += GROUP) {
+    const group = sentences.slice(i, i + GROUP);
+    paragraphs.push({ text: group.join(' '), startIdx: i, count: group.length });
   }
 }
 
-function clearBuffer() {
-  Object.values(audioBuffer).forEach(p => p.then(a => { try { a.src=''; } catch(e){} }));
-  audioBuffer = {};
+function findParagraphForSentence(sentIdx) {
+  for (let i = 0; i < paragraphs.length; i++) {
+    const p = paragraphs[i];
+    if (sentIdx >= p.startIdx && sentIdx < p.startIdx + p.count) return i;
+  }
+  return 0;
 }
+
+let paraBuffer = {}; // paragraphIdx -> Promise<Audio>
+
+function prefetchPara(pIdx) {
+  if (pIdx >= paragraphs.length || paraBuffer[pIdx]) return;
+  const p = paragraphs[pIdx];
+  paraBuffer[pIdx] = prefetch(p.text);
+}
+
+function clearBuffer() {
+  try { Object.values(paraBuffer).forEach(p => p.then(a => { try { a.src=''; } catch(e){} })); } catch(e){}
+  paraBuffer = {};
+  try { Object.values(audioBuffer).forEach(p => p.then(a => { try { a.src=''; } catch(e){} })); } catch(e){}
+  audioBuffer = {};
+  if (nextFetch) { nextFetch.catch(()=>{}); nextFetch = null; }
+}
+
+function updateSentCounter() {
+  const el = document.getElementById('sent-counter');
+  if (el && sentences.length) el.textContent = (sentenceIndex+1) + ' / ' + sentences.length;
+}
+
+// ── PRONUNCIATION / FIND & REPLACE ──
+// Rules have scope: 'global' (all books) or 'book' (specific book title)
+let pronounceRules = JSON.parse(localStorage.getItem('bv_pronounce') || '[]');
+let ruleScope = 'global'; // current scope selection in UI
+
+function setRuleScope(scope) {
+  ruleScope = scope;
+  document.getElementById('scope-global-btn').style.background = scope === 'global' ? 'var(--accent)' : 'none';
+  document.getElementById('scope-global-btn').style.color = scope === 'global' ? '#13120f' : 'var(--muted)';
+  document.getElementById('scope-book-btn').style.background = scope === 'book' ? 'var(--accent)' : 'none';
+  document.getElementById('scope-book-btn').style.color = scope === 'book' ? '#13120f' : 'var(--muted)';
+}
+
+function applyPronunciation(text) {
+  let t = text;
+  // Apply global rules + rules for current book
+  const active = pronounceRules.filter(r => r.scope === 'global' || r.book === bookTitle);
+  for (const rule of active) {
+    if (!rule.find) continue;
+    try {
+      const re = new RegExp(rule.find.replace(/[.*+?^${}()|\[\]\\]/g, '\\$&'), 'gi');
+      t = t.replace(re, rule.replace);
+    } catch(e) {}
+  }
+  return t;
+}
+
+function savePronounceRules() {
+  localStorage.setItem('bv_pronounce', JSON.stringify(pronounceRules));
+}
+
+function addReplaceRule() {
+  const find = document.getElementById('fr-find').value.trim();
+  const replace = document.getElementById('fr-replace').value.trim();
+  if (!find) { alert('Enter a word to find.'); return; }
+  // Remove duplicate
+  pronounceRules = pronounceRules.filter(r =>
+    !(r.find.toLowerCase() === find.toLowerCase() &&
+      (r.scope === ruleScope || (ruleScope === 'book' && r.book === bookTitle)))
+  );
+  pronounceRules.unshift({
+    find, replace,
+    scope: ruleScope,
+    book: ruleScope === 'book' ? bookTitle : null
+  });
+  savePronounceRules();
+  document.getElementById('fr-find').value = '';
+  document.getElementById('fr-replace').value = '';
+  renderRules();
+  const scopeLabel = ruleScope === 'global' ? 'all books' : '"' + (bookTitle || 'this book') + '"';
+  showToast('"' + find + '" → "' + replace + '" (' + scopeLabel + ')');
+}
+
+function renderRules() {
+  const el = document.getElementById('fr-rules');
+  el.innerHTML = '';
+  if (!pronounceRules.length) {
+    el.innerHTML = '<p style="font-size:12px;color:var(--muted)">No rules yet.</p>';
+    return;
+  }
+  pronounceRules.forEach((rule, i) => {
+    const scopeTag = rule.scope === 'global'
+      ? '<span style="font-size:10px;background:var(--accent-dim);color:var(--accent);border-radius:6px;padding:1px 6px;flex-shrink:0">All books</span>'
+      : '<span style="font-size:10px;background:rgba(122,171,138,.15);color:var(--green);border-radius:6px;padding:1px 6px;flex-shrink:0;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(rule.book||'') + '">This book</span>';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:13px';
+    row.innerHTML = scopeTag + `<span style="flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">"${escHtml(rule.find)}" → "${escHtml(rule.replace)}"</span><button onclick="deleteRule(${i})" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;flex-shrink:0">×</button>`;
+    el.appendChild(row);
+  });
+}
+
+function deleteRule(i) {
+  pronounceRules.splice(i, 1);
+  savePronounceRules();
+  renderRules();
+}
+
+// Hook openSheet to render rules
+const origOpenSheet = window.openSheet;
+window.openSheet = function(id) {
+  origOpenSheet(id);
+  if (id === 'findreplace-sheet') {
+    renderRules();
+    // If no book loaded, disable "this book" scope
+    const bookBtn = document.getElementById('scope-book-btn');
+    if (bookBtn) {
+      bookBtn.disabled = !bookTitle;
+      bookBtn.style.opacity = bookTitle ? '1' : '0.4';
+      bookBtn.title = bookTitle ? 'Apply to: ' + bookTitle : 'Open a book first';
+    }
+  }
+};
 
 // ── PREV / NEXT SENTENCE ──
 function prevSentence() {
@@ -641,51 +839,179 @@ function nextSentence() {
   setTimeout(() => playFrom(target), 50);
 }
 
-// ── PLAYBACK ──
-async function playFrom(idx) {
-  isStopped=false; sentenceIndex=idx;
+// ── GAPLESS PLAYBACK ENGINE ──
+// Key insight: fetch next paragraph BEFORE current one ends
+// Use Web Audio API chaining so audio is queued with zero gap
+// Sentence highlighting uses word-count proportion of paragraph duration
+
+let audioCtx = null;
+let nextFetch = null; // Promise for next paragraph audio blob
+
+function getAudioCtx() {
+  if (!audioCtx || audioCtx.state === 'closed') {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return audioCtx;
+}
+
+async function fetchAudioBlob(text) {
+  const url = `${serverUrl}/tts?` + new URLSearchParams({text, speed});
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('TTS fetch failed');
+  return r.arrayBuffer();
+}
+
+async function playFrom(startSentIdx) {
+  isStopped = false;
+  sentenceIndex = startSentIdx;
   await requestWakeLock();
+  buildParagraphs();
+  setStatus('speaking');
 
-  // Kick off prefetch buffer
-  prefetchAhead(idx);
+  let pIdx = findParagraphForSentence(startSentIdx);
 
-  for(let i=idx;i<sentences.length;i++){
-    if(isStopped) return;
-    sentenceIndex=i; savePosition();
-    highlightSentence(i);
-    setStatus('speaking');
+  // Pre-fetch first paragraph immediately
+  nextFetch = fetchAudioBlob(applyPronunciation(paragraphs[pIdx]?.text || ''));
 
-    // Get audio from buffer (already fetching)
-    if (!audioBuffer[i]) audioBuffer[i] = prefetch(sentences[i]);
-    const audio = await audioBuffer[i];
-    delete audioBuffer[i];
+  while (pIdx < paragraphs.length) {
+    if (isStopped) return;
+    const para = paragraphs[pIdx];
 
-    // Prefetch more ahead
-    prefetchAhead(i + 1);
+    // Get the pre-fetched blob
+    let arrayBuf;
+    try { arrayBuf = await nextFetch; }
+    catch(e) { pIdx++; continue; }
 
-    if(isStopped) return;
-    await playSentenceAudio(audio);
-    if(isStopped) return;
+    if (isStopped) return;
 
-    if(sleepEndChapter){ /* handled at chapter end */ }
+    // Start fetching NEXT paragraph immediately (overlap with current playback)
+    if (pIdx + 1 < paragraphs.length) {
+      nextFetch = fetchAudioBlob(applyPronunciation(paragraphs[pIdx+1].text));
+    }
+
+    // Decode and play
+    const firstSent = Math.max(startSentIdx, para.startIdx);
+    sentenceIndex = firstSent;
+    highlightSentence(firstSent);
+    updateSentCounter();
+    savePosition();
+
+    await playDecodedWithHighlight(arrayBuf, para, firstSent);
+    if (isStopped) return;
+
+    startSentIdx = 0;
+    pIdx++;
+    if (sleepEndChapter) { /* chapter end check below */ }
   }
 
-  if(!isStopped){
-    if(sleepEndChapter){ stopReading(); sleepEndChapter=false; return; }
-    if(currentChapter<chapters.length-1){
+  if (!isStopped) {
+    if (sleepEndChapter) { stopReading(); sleepEndChapter = false; return; }
+    if (currentChapter < chapters.length - 1) {
       document.getElementById('chi-'+currentChapter)?.classList.add('done');
       document.getElementById('dch-'+currentChapter)?.classList.add('done');
-      loadChapter(currentChapter+1);
-      await new Promise(r=>setTimeout(r,100));
-      if(!isStopped) playFrom(0);
+      loadChapter(currentChapter + 1);
+      await new Promise(r => setTimeout(r, 50));
+      if (!isStopped) playFrom(0);
     } else {
       stopReading(); clearSavedPos();
-      document.getElementById('play-btn').textContent='▶';
+      document.getElementById('play-btn').textContent = '▶';
       setStatus('done'); clearHighlight(); releaseWakeLock();
     }
   }
 }
 
+function playDecodedWithHighlight(arrayBuf, para, firstSentIdx) {
+  return new Promise(async resolve => {
+    if (isStopped) { resolve(); return; }
+
+    // Try Web Audio for gapless, fall back to HTMLAudio
+    try {
+      const ctx = getAudioCtx();
+      if (ctx.state === 'suspended') await ctx.resume();
+
+      const decoded = await ctx.decodeAudioData(arrayBuf.slice(0));
+      if (isStopped) { resolve(); return; }
+
+      const source = ctx.createBufferSource();
+      source.buffer = decoded;
+      source.connect(ctx.destination);
+      source.playbackRate.value = 1.0; // speed already applied server-side
+
+      const duration = decoded.duration * 1000; // ms
+      const sentGroup = sentences.slice(para.startIdx, para.startIdx + para.count);
+      const wordCounts = sentGroup.map(s => s.split(/\s+/).length);
+      const totalWords = wordCounts.reduce((a,b)=>a+b,0) || 1;
+
+      // Schedule sentence highlights
+      const timers = [];
+      let elapsed = 0;
+      sentGroup.forEach((_, j) => {
+        const sIdx = para.startIdx + j;
+        if (sIdx < firstSentIdx) { elapsed += (wordCounts[j]/totalWords)*duration; return; }
+        const delay = elapsed;
+        const t = setTimeout(() => {
+          if (isStopped) return;
+          sentenceIndex = sIdx;
+          highlightSentence(sIdx);
+          updateSentCounter();
+          savePosition();
+        }, delay);
+        timers.push(t);
+        elapsed += (wordCounts[j]/totalWords)*duration;
+      });
+
+      source.onended = () => {
+        timers.forEach(clearTimeout);
+        currentAudio = null;
+        resolve();
+      };
+      currentAudio = { pause: ()=>{ try{source.stop();}catch(e){} }, src: '' };
+      source.start(0);
+
+    } catch(e) {
+      // Fallback: blob URL + HTMLAudio
+      const blob = new Blob([arrayBuf], {type:'audio/mpeg'});
+      const blobUrl = URL.createObjectURL(blob);
+      const audio = new Audio(blobUrl);
+      currentAudio = audio;
+
+      const sentGroup = sentences.slice(para.startIdx, para.startIdx + para.count);
+      const wordCounts = sentGroup.map(s => s.split(/\s+/).length);
+      const totalWords = wordCounts.reduce((a,b)=>a+b,0) || 1;
+      const timers = [];
+
+      audio.onended = () => { timers.forEach(clearTimeout); URL.revokeObjectURL(blobUrl); currentAudio=null; resolve(); };
+      audio.onerror = () => { timers.forEach(clearTimeout); URL.revokeObjectURL(blobUrl); currentAudio=null; resolve(); };
+
+      const doPlay = async () => {
+        // Wait for duration to be known
+        if (!audio.duration) {
+          await new Promise(r => { audio.onloadedmetadata = r; setTimeout(r, 1000); });
+        }
+        const duration = (audio.duration || 4) * 1000;
+        // Schedule highlights from NOW (play start), not from metadata load
+        let elapsed = 0;
+        sentGroup.forEach((_, j) => {
+          const sIdx = para.startIdx + j;
+          if (sIdx < firstSentIdx) { elapsed += (wordCounts[j]/totalWords)*duration; return; }
+          const t = setTimeout(() => {
+            if (isStopped) return;
+            sentenceIndex = sIdx;
+            highlightSentence(sIdx);
+            updateSentCounter();
+            savePosition();
+          }, elapsed);
+          timers.push(t);
+          elapsed += (wordCounts[j]/totalWords)*duration;
+        });
+        audio.play().catch(()=>{ timers.forEach(clearTimeout); resolve(); });
+      };
+      doPlay();
+    }
+  });
+}
+
+// Keep old prefetch for download feature compatibility
 function prefetch(text){
   return new Promise(resolve=>{
     const url=`${serverUrl}/tts?`+new URLSearchParams({text,speed});
@@ -695,6 +1021,7 @@ function prefetch(text){
     setTimeout(done,5000);
   });
 }
+
 function playSentenceAudio(audio){
   return new Promise(resolve=>{
     if(!audio){resolve();return;}
@@ -709,6 +1036,7 @@ function highlightSentence(i){
   const el=sentenceEls[i]; if(!el) return;
   el.classList.add('reading');
   el.scrollIntoView({block:'center',behavior:'smooth'});
+  updateSentCounter();
 }
 function locateSentence(){
   const el=sentenceEls[sentenceIndex];
@@ -721,10 +1049,14 @@ function locateSentence(){
 function clearHighlight(){sentenceEls.forEach(el=>el.classList.remove('reading'));}
 function stopAudio(){
   isStopped=true;
-  if(currentAudio){try{currentAudio.pause();currentAudio.src='';}catch(e){}currentAudio=null;}
+  if(currentAudio){
+    try{ if(typeof currentAudio.pause==='function') currentAudio.pause(); }catch(e){}
+    try{ currentAudio.src=''; }catch(e){}
+    currentAudio=null;
+  }
   clearBuffer();
   releaseWakeLock();
-  // NOTE: highlight intentionally kept so user can see where they paused
+  // highlight kept intentionally so user sees where they paused
 }
 function stopReading(){
   isPlaying=false; stopAudio();
@@ -807,6 +1139,167 @@ function setStatus(s){
   else if(s==='done'){dot.className='dot';txt.textContent='Finished';}
 }
 function showLoading(on){document.getElementById('loading-bar').style.display=on?'block':'none';}
+
+
+// ── LIBRARY ──
+// Books stored in localStorage as metadata only (title, chapters count, progress)
+// Actual EPUB data stored in memory while app is open
+let library = JSON.parse(localStorage.getItem('bv_library') || '[]');
+let epubCache = {}; // bookTitle -> {chapters, text}
+
+function saveLibrary() {
+  localStorage.setItem('bv_library', JSON.stringify(library));
+}
+
+function showLibrary() {
+  document.getElementById('setup-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('library-screen').style.display = 'flex';
+  renderLibrary();
+}
+
+function showSetup() {
+  document.getElementById('library-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('setup-screen').style.display = 'flex';
+  document.getElementById('server-url').value = serverUrl;
+  showResumeBanner();
+}
+
+function renderLibrary() {
+  const scroll = document.getElementById('lib-scroll');
+  const empty = document.getElementById('lib-empty');
+  if (!library.length) { empty.style.display = 'flex'; return; }
+  empty.style.display = 'none';
+  // Clear existing cards
+  [...scroll.querySelectorAll('.book-card')].forEach(el => el.remove());
+  library.forEach((book, idx) => {
+    const card = document.createElement('div');
+    card.className = 'book-card';
+    const pct = book.totalChapters > 1 ? Math.round((book.chapter / (book.totalChapters-1))*100) : 0;
+    card.innerHTML = `
+      <div class="book-thumb">📖</div>
+      <div class="book-info">
+        <h3>${escHtml(book.title)}</h3>
+        <p>Ch ${book.chapter+1} of ${book.totalChapters} · ${pct}% complete</p>
+        <div class="book-prog"><div class="book-prog-fill" style="width:${pct}%"></div></div>
+      </div>
+      <button class="book-del" onclick="deleteBook(event,${idx})">×</button>
+    `;
+    card.onclick = () => openBookFromLibrary(idx);
+    scroll.appendChild(card);
+  });
+}
+
+function deleteBook(e, idx) {
+  e.stopPropagation();
+  if (!confirm('Remove "' + library[idx].title + '" from library?')) return;
+  delete epubCache[library[idx].title];
+  library.splice(idx, 1);
+  saveLibrary();
+  renderLibrary();
+}
+
+async function openBookFromLibrary(idx) {
+  const book = library[idx];
+  if (!serverUrl) { showSetup(); return; }
+  // If EPUB is cached in memory, open directly
+  if (epubCache[book.title]) {
+    chapters = epubCache[book.title].chapters;
+    bookTitle = book.title;
+    document.getElementById('book-name').textContent = bookTitle;
+    document.getElementById('drop-zone').classList.add('hidden');
+    document.getElementById('reader-scroll').classList.remove('hidden');
+    document.getElementById('player').classList.remove('hidden');
+    buildSidebar(); buildDownloadList(); setupMediaSession();
+    loadChapter(book.chapter);
+    sentenceIndex = book.sentence || 0;
+    document.getElementById('library-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    return;
+  }
+  // Need to re-upload the file
+  alert('Please re-open the EPUB file for "' + book.title + '" — tap + Add EPUB and select it again.');
+  document.getElementById('lib-file-input').click();
+}
+
+// Handle lib file input
+document.getElementById('lib-file-input').addEventListener('change', async e => {
+  if (!e.target.files[0]) return;
+  if (!serverUrl) { showSetup(); return; }
+  await loadEpubFromLibrary(e.target.files[0]);
+});
+
+async function loadEpubFromLibrary(file) {
+  showLoading(true);
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const cxml = await zip.file('META-INF/container.xml').async('text');
+    const cdoc = new DOMParser().parseFromString(cxml,'application/xml');
+    const opfPath = cdoc.querySelector('rootfile').getAttribute('full-path');
+    const opfDir = opfPath.includes('/') ? opfPath.substring(0,opfPath.lastIndexOf('/')+1) : '';
+    const opfText = await zip.file(opfPath).async('text');
+    const opfDoc = new DOMParser().parseFromString(opfText,'application/xml');
+    const manifest={};
+    opfDoc.querySelectorAll('manifest item').forEach(item => { manifest[item.getAttribute('id')]=item.getAttribute('href'); });
+    const spineIds=[...opfDoc.querySelectorAll('spine itemref')].map(r=>r.getAttribute('idref'));
+    const loadedChapters=[];
+    for (const id of spineIds) {
+      const href=manifest[id]; if(!href) continue;
+      const entry=zip.file(opfDir+href)||zip.file(href); if(!entry) continue;
+      const html=await entry.async('text');
+      const doc=new DOMParser().parseFromString(html,'text/html');
+      doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
+      const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
+      if(text.length<50) continue;
+      const title=(doc.querySelector('title')?.textContent||doc.querySelector('h1,h2,h3')?.textContent||`Part ${loadedChapters.length+1}`).trim().substring(0,70);
+      const words=text.split(/\s+/).length;
+      const mins=Math.round(words/200);
+      loadedChapters.push({title,html:doc.body.innerHTML,text,mins});
+    }
+    if(!loadedChapters.length){alert('Could not parse this EPUB.');return;}
+
+    const title = file.name.replace('.epub','');
+    // Cache in memory
+    epubCache[title] = { chapters: loadedChapters };
+
+    // Add to library or update existing
+    const existing = library.findIndex(b => b.title === title);
+    const savedPos = loadSavedPos();
+    const chapter = (savedPos?.book === title) ? savedPos.chapter : 0;
+    const sentence = (savedPos?.book === title) ? savedPos.sentence : 0;
+    if (existing >= 0) {
+      library[existing].totalChapters = loadedChapters.length;
+    } else {
+      library.unshift({ title, totalChapters: loadedChapters.length, chapter, sentence });
+    }
+    saveLibrary();
+
+    // Open it
+    chapters = loadedChapters;
+    bookTitle = title;
+    document.getElementById('book-name').textContent = bookTitle;
+    document.getElementById('drop-zone').classList.add('hidden');
+    document.getElementById('reader-scroll').classList.remove('hidden');
+    document.getElementById('player').classList.remove('hidden');
+    buildSidebar(); buildDownloadList(); setupMediaSession();
+    loadChapter(chapter);
+    sentenceIndex = sentence;
+    document.getElementById('library-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+  } catch(e) { alert('Error loading EPUB: '+e.message); }
+  showLoading(false);
+}
+
+// Update library progress when reading
+function updateLibraryProgress() {
+  const idx = library.findIndex(b => b.title === bookTitle);
+  if (idx >= 0) {
+    library[idx].chapter = currentChapter;
+    library[idx].sentence = sentenceIndex;
+    saveLibrary();
+  }
+}
 
 // ── GOOGLE DRIVE SYNC ──
 // Uses Google Identity Services + Drive REST API
@@ -1018,7 +1511,48 @@ function showToast(msg) {
 
 // Init Drive UI and try restore
 updateGDriveUI();
-if (gdriveEnabled && isTokenValid()) gdriveRestoreOnLoad();
+if (gdriveEnabled) {
+  if (isTokenValid()) {
+    gdriveRestoreOnLoad();
+  } else {
+    // Token expired — try silent re-auth
+    silentReauth();
+  }
+}
+
+async function silentReauth() {
+  try {
+    if (!window.google) {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = () => attemptSilentAuth();
+      document.head.appendChild(s);
+    } else {
+      attemptSilentAuth();
+    }
+  } catch(e) {}
+}
+
+function attemptSilentAuth() {
+  try {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: GDRIVE_CLIENT_ID,
+      scope: GDRIVE_SCOPES,
+      prompt: '', // empty = silent, no popup
+      callback: async (resp) => {
+        if (resp.error) return; // silently fail
+        gdriveToken = resp.access_token;
+        gdriveExpiry = Date.now() + (resp.expires_in * 1000);
+        gdriveEnabled = true;
+        localStorage.setItem('gdrive_token', gdriveToken);
+        localStorage.setItem('gdrive_expiry', gdriveExpiry);
+        updateGDriveUI();
+        await gdriveRestoreOnLoad();
+      }
+    });
+    client.requestAccessToken({ prompt: '' });
+  } catch(e) {}
+}
 
 </script>
 </body>
