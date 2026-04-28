@@ -140,6 +140,18 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 .dl-all-wrap{padding:14px 20px;border-bottom:1px solid var(--border)}
 
 @media(max-width:540px){.sidebar{display:none}.reader-body{font-size:var(--fs)}}
+/* Auto-hide player */
+.player{transition:transform .3s ease, opacity .3s ease}
+.player.hidden-player{transform:translateY(100%);opacity:0;pointer-events:none;position:absolute;bottom:0;left:0;right:0}
+/* Toggle switch */
+.toggle-wrap{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)}
+.toggle-wrap label{font-size:14px;color:var(--text)}
+.toggle{position:relative;width:44px;height:26px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:var(--border);border-radius:13px;transition:.2s;cursor:pointer}
+.toggle-slider:before{content:'';position:absolute;width:20px;height:20px;left:3px;top:3px;background:white;border-radius:50%;transition:.2s}
+.toggle input:checked + .toggle-slider{background:var(--accent)}
+.toggle input:checked + .toggle-slider:before{transform:translateX(18px)}
 .hidden{display:none!important}
 /* Library page */
 #library-screen{flex:1;display:none;flex-direction:column;overflow:hidden;height:100dvh}
@@ -172,6 +184,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 </head>
 <body>
 <div class="loading-bar" id="loading-bar"></div>
+<!-- iOS background audio: persistent audio element -->
+<audio id="bg-audio" playsinline webkit-playsinline style="display:none"></audio>
 <div class="sync-toast" id="sync-toast"></div>
 
 <!-- LIBRARY -->
@@ -250,7 +264,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <div class="setting-row">
         <label>Speed</label>
         <div class="right">
-          <input type="range" id="speed-sl2" min="0.5" max="3.0" step="0.1" value="1.7" oninput="onSpeed(this.value)">
+          <input type="range" id="speed-sl2" min="0.5" max="3.0" step="0.05" value="1.7" oninput="onSpeed(this.value)">
           <span class="speed-val" id="speed-val2">1.7×</span>
         </div>
       </div>
@@ -312,18 +326,34 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
   </div>
 </div>
 
+<!-- MORE SHEET -->
+<div class="overlay" id="more-sheet">
+  <div class="overlay-bg" onclick="closeSheet('more-sheet')"></div>
+  <div class="sheet">
+    <div class="sheet-head"><span>Options</span><button class="sheet-close" onclick="closeSheet('more-sheet')">×</button></div>
+    <div class="sheet-body">
+      <div class="toggle-wrap">
+        <label>Auto-hide player bar</label>
+        <label class="toggle"><input type="checkbox" id="autohide-toggle" onchange="toggleAutoHide(this.checked)"><span class="toggle-slider"></span></label>
+      </div>
+      <div style="padding:8px 0">
+        <button onclick="closeSheet('more-sheet');document.getElementById('file-input').click()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">+ Add EPUB</button>
+        <button onclick="closeSheet('more-sheet');openSheet('dl-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">⬇ Download Audio</button>
+        <button onclick="closeSheet('more-sheet');openSheet('sleep-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">⏱ Sleep Timer <span class="sleep-badge" id="sleep-badge" style="margin-left:4px"></span></button>
+        <button onclick="closeSheet('more-sheet');openSheet('findreplace-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">A→B Find &amp; Replace</button>
+        <button onclick="closeSheet('more-sheet');openSheet('settings-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer">⚙ Settings</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- APP -->
 <div id="app">
   <header>
-    <span class="logo">📖</span>
+    <button class="hbtn" onclick="showLibrary()" style="font-size:16px;border:none;padding:4px 6px">📚</button>
     <span class="book-name" id="book-name">No book loaded</span>
-    <button class="hbtn" onclick="showLibrary()">📚</button>
     <button class="hbtn" onclick="openSheet('ch-drawer')">☰</button>
-    <button class="hbtn" onclick="document.getElementById('file-input').click()">+ EPUB</button>
-    <button class="hbtn" onclick="openSheet('dl-sheet')">⬇</button>
-    <button class="hbtn" onclick="openSheet('sleep-sheet')">⏱ <span class="sleep-badge" id="sleep-badge"></span></button>
-    <button class="hbtn" onclick="openSheet('findreplace-sheet')">A→B</button>
-    <button class="hbtn" onclick="openSheet('settings-sheet')">⚙</button>
+    <button class="hbtn" onclick="openSheet('more-sheet')">···</button>
   </header>
 
   <div class="layout">
@@ -363,7 +393,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
         </div>
         <div class="player-row2">
           <span class="setting-lbl">Speed</span>
-          <input type="range" id="speed-sl" min="0.5" max="3.0" step="0.1" value="1.7" oninput="onSpeed(this.value)">
+          <input type="range" id="speed-sl" min="0.5" max="3.0" step="0.05" value="1.7" oninput="onSpeed(this.value)">
           <span class="speed-val" id="speed-val">1.7×</span>
         </div>
       </div>
@@ -861,176 +891,178 @@ function nextSentence() {
   setTimeout(() => playFrom(target), 50);
 }
 
-// ── GAPLESS PLAYBACK ENGINE ──
-// Key insight: fetch next paragraph BEFORE current one ends
-// Use Web Audio API chaining so audio is queued with zero gap
-// Sentence highlighting uses word-count proportion of paragraph duration
+// ── BACKGROUND-SAFE PLAYBACK ENGINE ──
+// Uses a SINGLE persistent <audio> element with blob URL swapping.
+// Safari keeps HTMLAudio playing in background even when JS is suspended.
+// Next paragraph is fetched while current plays, then swapped instantly on 'ended'.
 
-// audioCtx and nextFetch declared above
+let bgAudio = null; // single persistent audio element
+let pendingBlob = null; // next blob URL ready to swap in
+let highlightTimers = [];
 
-function getAudioCtx() {
-  if (!audioCtx || audioCtx.state === 'closed') {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function getBgAudio() {
+  if (!bgAudio) {
+    bgAudio = document.getElementById('bg-audio') || new Audio();
+    bgAudio.preload = 'auto';
   }
-  return audioCtx;
+  return bgAudio;
 }
 
 async function fetchAudioBlob(text) {
   const url = `${serverUrl}/tts?` + new URLSearchParams({text, speed});
   const r = await fetch(url);
   if (!r.ok) throw new Error('TTS fetch failed');
-  return r.arrayBuffer();
+  const blob = await r.blob();
+  return URL.createObjectURL(blob);
+}
+
+function clearHighlightTimers() {
+  highlightTimers.forEach(clearTimeout);
+  highlightTimers = [];
+}
+
+function scheduleHighlights(para, firstSentIdx, duration) {
+  clearHighlightTimers();
+  const sentGroup = sentences.slice(para.startIdx, para.startIdx + para.count);
+  const wordCounts = sentGroup.map(s => s.split(/\s+/).length);
+  const totalWords = wordCounts.reduce((a,b) => a+b, 0) || 1;
+  let elapsed = 0;
+  sentGroup.forEach((_, j) => {
+    const sIdx = para.startIdx + j;
+    if (sIdx < firstSentIdx) { elapsed += (wordCounts[j]/totalWords)*duration; return; }
+    const t = setTimeout(() => {
+      if (isStopped) return;
+      sentenceIndex = sIdx;
+      highlightSentence(sIdx);
+      updateSentCounter();
+      savePosition();
+    }, elapsed);
+    highlightTimers.push(t);
+    elapsed += (wordCounts[j]/totalWords)*duration;
+  });
 }
 
 async function playFrom(startSentIdx) {
   isStopped = false;
-  const mySession = ++playSession; // capture this session's ID
+  const mySession = ++playSession;
   sentenceIndex = startSentIdx;
   await requestWakeLock();
   buildParagraphs();
   setStatus('speaking');
 
   let pIdx = findParagraphForSentence(startSentIdx);
+  const audio = getBgAudio();
 
-  // Pre-fetch first paragraph immediately
-  nextFetch = fetchAudioBlob(applyPronunciation(paragraphs[pIdx]?.text || ''));
+  // Fetch first blob
+  let currentBlobUrl = null;
+  try {
+    currentBlobUrl = await fetchAudioBlob(applyPronunciation(paragraphs[pIdx]?.text || ''));
+  } catch(e) { return; }
+
+  if (isStopped || mySession !== playSession) {
+    URL.revokeObjectURL(currentBlobUrl); return;
+  }
+
+  // Pre-fetch next blob in parallel
+  let nextBlobPromise = pIdx+1 < paragraphs.length
+    ? fetchAudioBlob(applyPronunciation(paragraphs[pIdx+1].text))
+    : null;
 
   while (pIdx < paragraphs.length) {
-    if (isStopped || mySession !== playSession) return;
-    const para = paragraphs[pIdx];
-
-    // Get the pre-fetched blob
-    let arrayBuf;
-    try { arrayBuf = await nextFetch; }
-    catch(e) { pIdx++; continue; }
-
-    if (isStopped) return;
-
-    // Start fetching NEXT paragraph immediately (overlap with current playback)
-    if (pIdx + 1 < paragraphs.length) {
-      nextFetch = fetchAudioBlob(applyPronunciation(paragraphs[pIdx+1].text));
+    if (isStopped || mySession !== playSession) {
+      URL.revokeObjectURL(currentBlobUrl); return;
     }
 
-    // Decode and play
+    const para = paragraphs[pIdx];
     const firstSent = Math.max(startSentIdx, para.startIdx);
+
+    // Set audio src and play
+    audio.src = currentBlobUrl;
+    currentAudio = audio;
+
+    // Wait for enough data then play
+    await new Promise(r => {
+      audio.oncanplay = r;
+      audio.onerror = r;
+      setTimeout(r, 3000);
+    });
+
+    if (isStopped || mySession !== playSession) {
+      URL.revokeObjectURL(currentBlobUrl); return;
+    }
+
+    // Schedule highlights using duration estimate (words/speed)
+    // Use a generous estimate before we know real duration
+    const estDuration = (para.text.split(/\s+/).length / (speed * 2.5)) * 1000;
+    scheduleHighlights(para, firstSent, estDuration);
+
+    // Actually play
+    try { await audio.play(); } catch(e) {}
+
+    // Refine highlights once we know real duration
+    if (audio.duration && !isNaN(audio.duration)) {
+      scheduleHighlights(para, firstSent, audio.duration * 1000);
+    }
+
     sentenceIndex = firstSent;
     highlightSentence(firstSent);
     updateSentCounter();
     savePosition();
 
-    await playDecodedWithHighlight(arrayBuf, para, firstSent);
+    // Wait for audio to end
+    await new Promise(resolve => {
+      const onEnd = () => { audio.removeEventListener('ended', onEnd); resolve(); };
+      const onErr = () => { audio.removeEventListener('error', onErr); resolve(); };
+      audio.addEventListener('ended', onEnd);
+      audio.addEventListener('error', onErr);
+      // Safety timeout
+      const safety = setTimeout(resolve, (audio.duration || 30) * 1000 + 2000);
+      // Store so we can cancel if stopped
+      currentAudio._safetyTimer = safety;
+    });
+
+    if (currentAudio && currentAudio._safetyTimer) {
+      clearTimeout(currentAudio._safetyTimer);
+    }
+
+    clearHighlightTimers();
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+
     if (isStopped || mySession !== playSession) return;
 
+    // Advance
     startSentIdx = 0;
     pIdx++;
-    if (sleepEndChapter) { /* chapter end check below */ }
+
+    if (sleepEndChapter) { stopReading(); sleepEndChapter = false; return; }
+
+    // Get next blob (should already be fetched)
+    if (pIdx < paragraphs.length) {
+      try {
+        currentBlobUrl = await nextBlobPromise;
+        // Pre-fetch the one after
+        nextBlobPromise = pIdx+1 < paragraphs.length
+          ? fetchAudioBlob(applyPronunciation(paragraphs[pIdx+1].text))
+          : null;
+      } catch(e) { pIdx++; continue; }
+    }
   }
 
-  if (!isStopped) {
+  if (!isStopped && mySession === playSession) {
     if (sleepEndChapter) { stopReading(); sleepEndChapter = false; return; }
     if (currentChapter < chapters.length - 1) {
       document.getElementById('chi-'+currentChapter)?.classList.add('done');
       document.getElementById('dch-'+currentChapter)?.classList.add('done');
       loadChapter(currentChapter + 1);
       await new Promise(r => setTimeout(r, 50));
-      if (!isStopped) playFrom(0);
+      if (!isStopped && mySession === playSession) playFrom(0);
     } else {
       stopReading(); clearSavedPos();
       document.getElementById('play-btn').textContent = '▶';
       setStatus('done'); clearHighlight(); releaseWakeLock();
     }
   }
-}
-
-function playDecodedWithHighlight(arrayBuf, para, firstSentIdx) {
-  return new Promise(async resolve => {
-    if (isStopped) { resolve(); return; }
-
-    // Try Web Audio for gapless, fall back to HTMLAudio
-    try {
-      const ctx = getAudioCtx();
-      if (ctx.state === 'suspended') await ctx.resume();
-
-      const decoded = await ctx.decodeAudioData(arrayBuf.slice(0));
-      if (isStopped) { resolve(); return; }
-
-      const source = ctx.createBufferSource();
-      source.buffer = decoded;
-      source.connect(ctx.destination);
-      source.playbackRate.value = 1.0; // speed already applied server-side
-
-      const duration = decoded.duration * 1000; // ms
-      const sentGroup = sentences.slice(para.startIdx, para.startIdx + para.count);
-      const wordCounts = sentGroup.map(s => s.split(/\s+/).length);
-      const totalWords = wordCounts.reduce((a,b)=>a+b,0) || 1;
-
-      // Schedule sentence highlights
-      const timers = [];
-      let elapsed = 0;
-      sentGroup.forEach((_, j) => {
-        const sIdx = para.startIdx + j;
-        if (sIdx < firstSentIdx) { elapsed += (wordCounts[j]/totalWords)*duration; return; }
-        const delay = elapsed;
-        const t = setTimeout(() => {
-          if (isStopped) return;
-          sentenceIndex = sIdx;
-          highlightSentence(sIdx);
-          updateSentCounter();
-          savePosition();
-        }, delay);
-        timers.push(t);
-        elapsed += (wordCounts[j]/totalWords)*duration;
-      });
-
-      source.onended = () => {
-        timers.forEach(clearTimeout);
-        currentAudio = null;
-        resolve();
-      };
-      currentAudio = { pause: ()=>{ try{source.stop();}catch(e){} }, src: '' };
-      source.start(0);
-
-    } catch(e) {
-      // Fallback: blob URL + HTMLAudio
-      const blob = new Blob([arrayBuf], {type:'audio/mpeg'});
-      const blobUrl = URL.createObjectURL(blob);
-      const audio = new Audio(blobUrl);
-      currentAudio = audio;
-
-      const sentGroup = sentences.slice(para.startIdx, para.startIdx + para.count);
-      const wordCounts = sentGroup.map(s => s.split(/\s+/).length);
-      const totalWords = wordCounts.reduce((a,b)=>a+b,0) || 1;
-      const timers = [];
-
-      audio.onended = () => { timers.forEach(clearTimeout); URL.revokeObjectURL(blobUrl); currentAudio=null; resolve(); };
-      audio.onerror = () => { timers.forEach(clearTimeout); URL.revokeObjectURL(blobUrl); currentAudio=null; resolve(); };
-
-      const doPlay = async () => {
-        // Wait for duration to be known
-        if (!audio.duration) {
-          await new Promise(r => { audio.onloadedmetadata = r; setTimeout(r, 1000); });
-        }
-        const duration = (audio.duration || 4) * 1000;
-        // Schedule highlights from NOW (play start), not from metadata load
-        let elapsed = 0;
-        sentGroup.forEach((_, j) => {
-          const sIdx = para.startIdx + j;
-          if (sIdx < firstSentIdx) { elapsed += (wordCounts[j]/totalWords)*duration; return; }
-          const t = setTimeout(() => {
-            if (isStopped) return;
-            sentenceIndex = sIdx;
-            highlightSentence(sIdx);
-            updateSentCounter();
-            savePosition();
-          }, elapsed);
-          timers.push(t);
-          elapsed += (wordCounts[j]/totalWords)*duration;
-        });
-        audio.play().catch(()=>{ timers.forEach(clearTimeout); resolve(); });
-      };
-      doPlay();
-    }
-  });
 }
 
 // Keep old prefetch for download feature compatibility
@@ -1071,14 +1103,16 @@ function locateSentence(){
 function clearHighlight(){sentenceEls.forEach(el=>el.classList.remove('reading'));}
 function stopAudio(){
   isStopped=true;
+  clearHighlightTimers();
   if(currentAudio){
-    try{ if(typeof currentAudio.pause==='function') currentAudio.pause(); }catch(e){}
-    try{ currentAudio.src=''; }catch(e){}
+    try{ if(currentAudio._safetyTimer) clearTimeout(currentAudio._safetyTimer); }catch(e){}
+    try{ currentAudio.pause(); }catch(e){}
+    // Don't clear src — keep audio element alive for iOS background session
     currentAudio=null;
   }
   clearBuffer();
   releaseWakeLock();
-  // highlight kept intentionally so user sees where they paused
+  // highlight kept so user sees where they paused
 }
 function stopReading(){
   isPlaying=false; stopAudio();
@@ -1088,7 +1122,7 @@ function stopReading(){
 }
 
 // ── CONTROLS ──
-function togglePlay(){
+function togglePlay(){ resetHideTimer();
   if(isPlaying){
     stopReading();
   } else {
@@ -1162,6 +1196,74 @@ function setStatus(s){
 }
 function showLoading(on){document.getElementById('loading-bar').style.display=on?'block':'none';}
 
+// ── AUTO-HIDE PLAYER ──
+let autoHidePlayer = localStorage.getItem('bv_autohide') === 'true';
+let playerVisible = true;
+let hideTimeout = null;
+
+function initAutoHide() {
+  const toggle = document.getElementById('autohide-toggle');
+  if (toggle) toggle.checked = autoHidePlayer;
+  if (autoHidePlayer) scheduleHide();
+}
+
+function toggleAutoHide(enabled) {
+  autoHidePlayer = enabled;
+  localStorage.setItem('bv_autohide', enabled);
+  const player = document.getElementById('player');
+  if (!enabled) {
+    // Always show player when disabled
+    player.classList.remove('hidden-player');
+    playerVisible = true;
+    clearTimeout(hideTimeout);
+  } else {
+    scheduleHide();
+  }
+}
+
+function scheduleHide() {
+  if (!autoHidePlayer) return;
+  clearTimeout(hideTimeout);
+  hideTimeout = setTimeout(() => {
+    const player = document.getElementById('player');
+    if (player && !player.classList.contains('hidden')) {
+      player.classList.add('hidden-player');
+      playerVisible = false;
+    }
+  }, 3000);
+}
+
+function showPlayer() {
+  const player = document.getElementById('player');
+  if (!player) return;
+  player.classList.remove('hidden-player');
+  playerVisible = true;
+  if (autoHidePlayer) scheduleHide();
+}
+
+// Tap reader area to show/hide player
+document.addEventListener('DOMContentLoaded', () => {
+  const readerScroll = document.getElementById('reader-scroll');
+  if (readerScroll) {
+    readerScroll.addEventListener('click', (e) => {
+      // Only toggle if not clicking a sentence (sentence clicks handled separately)
+      if (e.target.classList.contains('sentence')) return;
+      if (!playerVisible) {
+        showPlayer();
+      } else if (autoHidePlayer) {
+        scheduleHide();
+      }
+    });
+  }
+  initAutoHide();
+});
+
+// Show player whenever controls are used
+function resetHideTimer() {
+  if (autoHidePlayer) { showPlayer(); scheduleHide(); }
+}
+
+
 
 // ── LIBRARY ──
 // Books stored in localStorage as metadata only (title, chapters count, progress)
@@ -1174,6 +1276,8 @@ function saveLibrary() {
 }
 
 function showLibrary() {
+  // Pause if playing
+  if (isPlaying) stopReading();
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
   document.getElementById('library-screen').style.display = 'flex';
@@ -1225,24 +1329,41 @@ function deleteBook(e, idx) {
 async function openBookFromLibrary(idx) {
   const book = library[idx];
   if (!serverUrl) { showSetup(); return; }
+
   // If EPUB is cached in memory, open directly
   if (epubCache[book.title]) {
     chapters = epubCache[book.title].chapters;
     bookTitle = book.title;
     document.getElementById('book-name').textContent = bookTitle;
+
+    // Always reset visibility correctly
     document.getElementById('drop-zone').classList.add('hidden');
     document.getElementById('reader-scroll').classList.remove('hidden');
     document.getElementById('player').classList.remove('hidden');
+
+    // Hide library, show app
+    document.getElementById('library-screen').style.display = 'none';
+    document.getElementById('setup-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+
     buildSidebar(); buildDownloadList(); setupMediaSession();
     loadChapter(book.chapter);
     sentenceIndex = book.sentence || 0;
-    document.getElementById('library-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'flex';
+    // Update sentence counter display
+    updateSentCounter();
     return;
   }
-  // Need to re-upload the file
-  alert('Please re-open the EPUB file for "' + book.title + '" — tap + Add EPUB and select it again.');
-  document.getElementById('lib-file-input').click();
+
+  // Not in cache — need to re-open file
+  document.getElementById('library-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  // Show drop zone with helpful message
+  document.getElementById('drop-zone').classList.remove('hidden');
+  document.getElementById('reader-scroll').classList.add('hidden');
+  document.getElementById('player').classList.add('hidden');
+  document.getElementById('drop-zone').querySelector('p').textContent =
+    'Re-open "' + book.title + '" to continue from Chapter ' + (book.chapter+1);
+  document.getElementById('book-name').textContent = book.title;
 }
 
 // Handle lib file input
