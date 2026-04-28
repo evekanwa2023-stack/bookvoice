@@ -569,8 +569,24 @@ let pendingResume = null;
 
 // ── EARLY STATE (needed before functions) ──
 let library = JSON.parse(localStorage.getItem('bv_library') || '[]');
-// Clean up any duplicate entries on load
-setTimeout(() => deduplicateLibrary && deduplicateLibrary(), 500);
+// Clean existing titles and deduplicate on load
+setTimeout(() => {
+  if (typeof cleanBookTitle === 'function') {
+    let changed = false;
+    const seen = new Set();
+    library = library.filter(b => {
+      const clean = cleanBookTitle(b.title);
+      if (clean !== b.title) { b.title = clean; changed = true; }
+      if (seen.has(b.title)) return false;
+      seen.add(b.title);
+      return true;
+    });
+    if (changed) saveLibrary();
+    // Re-render if library is visible
+    const ls = document.getElementById('library-screen');
+    if (ls && ls.style.display !== 'none') renderLibrary();
+  }
+}, 100);
 let pronounceRules = JSON.parse(localStorage.getItem('bv_pronounce') || '[]');
 let ruleScope = 'global';
 let paragraphs = [];
