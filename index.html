@@ -1991,7 +1991,7 @@ async function driveFindEpub(title) {
   return null;
 }
 
-async function driveDownloadEpub(fileId) {
+async function driveDownloadEpub(fileId, titleOverride) {
   if (!gdriveEnabled || !isTokenValid()) return null;
   try {
     showToast('☁️ Loading from Drive...');
@@ -2002,7 +2002,9 @@ async function driveDownloadEpub(fileId) {
     if (!r.ok) return null;
     const blob = await r.blob();
     showToast('✓ Loaded from Drive');
-    return new File([blob], fileId + '.epub', {type: 'application/epub+zip'});
+    // Use the known clean title as filename, not the Drive file ID
+    const fname = (titleOverride || fileId) + '.epub';
+    return new File([blob], fname, {type: 'application/epub+zip'});
   } catch(e) { return null; }
 }
 
@@ -2018,11 +2020,11 @@ async function tryLoadFromDrive(book) {
     library[idx].driveFileId = fileId; saveLibrary();
   }
 
-  const file = await driveDownloadEpub(fileId);
+  const file = await driveDownloadEpub(fileId, book.title);
   if (!file) return false;
 
-  // Parse and load
-  await loadEpubFromLibrary(file);
+  // Parse and load — pass the known title so it doesn't get renamed
+  await loadEpubFromLibrary(file, book.title);
   return true;
 }
 
@@ -2160,7 +2162,7 @@ document.getElementById('lib-file-input').addEventListener('change', async e => 
   await loadEpubFromLibrary(e.target.files[0]);
 });
 
-async function loadEpubFromLibrary(file) {
+async function loadEpubFromLibrary(file, titleOverride) {
   showLoading(true);
   try {
     const zip = await JSZip.loadAsync(file);
@@ -2189,7 +2191,7 @@ async function loadEpubFromLibrary(file) {
     }
     if(!loadedChapters.length){alert('Could not parse this EPUB.');return;}
 
-    const title = cleanBookTitle(file.name.replace('.epub',''));
+    const title = titleOverride || cleanBookTitle(file.name.replace('.epub',''));
     // Cache in memory
     epubCache[title] = { chapters: loadedChapters };
     // Upload to Drive in background if not already there
