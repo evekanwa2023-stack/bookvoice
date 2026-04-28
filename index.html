@@ -7,439 +7,200 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@300;400;500&display=swap');
-
 :root {
-  --bg: #13120f;
-  --surface: #1e1c18;
-  --surface2: #272420;
-  --border: #35322c;
-  --accent: #d4a84b;
-  --accent-dim: rgba(212,168,75,0.15);
-  --green: #7aab8a;
-  --text: #ede8df;
-  --muted: #7a7268;
-  --r: 10px;
+  --bg:#13120f;--surface:#1e1c18;--surface2:#272420;--border:#35322c;
+  --accent:#d4a84b;--accent-dim:rgba(212,168,75,0.15);--green:#7aab8a;
+  --text:#ede8df;--muted:#7a7268;
 }
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 
-* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+/* SETUP */
+#setup-screen{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px}
+.setup-logo{font-family:'Lora',serif;font-size:28px;color:var(--accent);margin-bottom:8px}
+.setup-sub{font-size:13px;color:var(--muted);margin-bottom:32px;text-align:center}
+.setup-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px}
+.setup-card h2{font-size:15px;font-weight:500;margin-bottom:6px}
+.setup-card p{font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6}
+.url-input-wrap{display:flex;gap:8px;margin-bottom:12px}
+input[type=text]{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;padding:10px 12px;font-family:'DM Sans',sans-serif;outline:none;transition:border .2s}
+input[type=text]:focus{border-color:var(--accent)}
+input[type=text]::placeholder{color:var(--muted)}
+.btn{background:var(--accent);color:#13120f;border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:opacity .15s;white-space:nowrap}
+.btn:active{opacity:.7}
+.btn.ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+.conn-status{font-size:12px;padding:8px 12px;border-radius:6px;display:none;margin-bottom:12px}
+.conn-status.ok{background:rgba(122,171,138,.15);color:var(--green);display:block}
+.conn-status.err{background:rgba(192,80,80,.15);color:#c05050;display:block}
+hr.div{border:none;border-top:1px solid var(--border);margin:20px 0}
 
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'DM Sans', sans-serif;
-  height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
+/* RESUME BANNER */
+#resume-banner{display:none;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:16px}
+#resume-banner p{font-size:13px;color:var(--text);margin-bottom:10px;line-height:1.5}
+.resume-btns{display:flex;gap:8px}
 
-/* ── SERVER SETUP SCREEN ── */
-#setup-screen {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 32px 24px;
-  gap: 0;
-}
+/* APP */
+#app{flex:1;display:none;flex-direction:column;overflow:hidden;height:100dvh}
+header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface)}
+.logo{font-family:'Lora',serif;font-size:17px;color:var(--accent);flex-shrink:0}
+.book-name{font-size:12px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbtn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;flex-shrink:0}
+.hbtn:hover{color:var(--text);border-color:var(--accent)}
+.layout{display:flex;flex:1;overflow:hidden}
 
-.setup-logo {
-  font-family: 'Lora', serif;
-  font-size: 28px;
-  color: var(--accent);
-  margin-bottom: 8px;
-}
+/* SIDEBAR */
+.sidebar{width:220px;min-width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-head{padding:10px 14px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)}
+.ch-list{flex:1;overflow-y:auto}
+.ch-list::-webkit-scrollbar{width:3px}
+.ch-list::-webkit-scrollbar-thumb{background:var(--border)}
+.ch-item{padding:9px 14px;font-size:12px;color:var(--muted);cursor:pointer;border-left:2px solid transparent;line-height:1.4;transition:all .1s}
+.ch-item:hover{color:var(--text);background:var(--surface2)}
+.ch-item.active{color:var(--accent);border-left-color:var(--accent);background:var(--surface2)}
+.ch-item.done{color:var(--green)}
 
-.setup-sub {
-  font-size: 13px;
-  color: var(--muted);
-  margin-bottom: 36px;
-  text-align: center;
-}
+/* READER */
+.reader-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.reader-scroll{flex:1;overflow-y:auto;padding:36px 20px;scroll-behavior:smooth}
+.reader-scroll::-webkit-scrollbar{width:3px}
+.reader-scroll::-webkit-scrollbar-thumb{background:var(--border)}
+.reader-body{max-width:620px;margin:0 auto;font-family:'Lora',serif;font-size:17px;line-height:1.9;font-weight:400}
+.reader-body p{margin-bottom:1.1em}
+.reader-body h1,.reader-body h2,.reader-body h3{color:var(--accent);font-weight:500;margin:1.8em 0 .6em;font-size:20px}
+.sentence{border-radius:3px;transition:background .2s;cursor:pointer}
+.sentence:hover{background:rgba(212,168,75,.08)}
+.sentence.reading{background:rgba(212,168,75,.22);color:var(--text)}
 
-.setup-card {
-  width: 100%;
-  max-width: 420px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 24px;
-}
+/* DROP ZONE */
+#drop-zone{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:40px 24px;text-align:center}
+.drop-ring{width:88px;height:88px;border:2px dashed var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:36px;transition:all .2s}
+#drop-zone.drag-over .drop-ring{border-color:var(--accent);background:var(--accent-dim)}
+#drop-zone h2{font-family:'Lora',serif;font-size:20px;font-weight:400}
+#drop-zone p{font-size:13px;color:var(--muted);max-width:280px;line-height:1.6}
 
-.setup-card h2 {
-  font-size: 15px;
-  font-weight: 500;
-  margin-bottom: 6px;
-  color: var(--text);
-}
+/* PLAYER */
+.player{background:var(--surface);border-top:1px solid var(--border);padding:0 16px 12px}
+.prog-bar{width:100%;height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:12px}
+.prog-fill{height:100%;background:var(--accent);width:0%;transition:width .4s}
+.player-row1{display:flex;align-items:center;gap:12px}
+.ctrl-btn{background:none;border:1px solid var(--border);color:var(--text);border-radius:50%;width:36px;height:36px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.ctrl-btn:hover{border-color:var(--accent);color:var(--accent)}
+.play-btn{background:var(--accent)!important;border-color:var(--accent)!important;color:#13120f!important;width:46px!important;height:46px!important;font-size:18px!important}
+.player-info{flex:1;min-width:0}
+.now-label{font-size:11px;color:var(--muted);margin-bottom:2px;display:flex;align-items:center;gap:6px}
+.now-ch{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.dot.on{background:var(--green);animation:blink 1.2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.player-row2{display:flex;align-items:center;gap:16px;margin-top:10px;flex-wrap:wrap}
+.setting{display:flex;align-items:center;gap:8px}
+.setting label{font-size:11px;color:var(--muted);white-space:nowrap}
+input[type=range]{-webkit-appearance:none;width:100px;height:4px;background:var(--border);border-radius:2px;outline:none;border:none;padding:0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer}
+.speed-val{font-size:12px;color:var(--accent);min-width:36px}
+.loading-bar{position:fixed;top:0;left:0;right:0;height:2px;background:var(--accent);display:none;animation:lp 1s infinite alternate}
+@keyframes lp{from{opacity:.4}to{opacity:1}}
 
-.setup-card p {
-  font-size: 13px;
-  color: var(--muted);
-  margin-bottom: 16px;
-  line-height: 1.6;
-}
+/* CHAPTER DRAWER */
+#ch-drawer{position:fixed;inset:0;z-index:100;display:none;flex-direction:column}
+#ch-drawer.open{display:flex}
+.drawer-bg{position:absolute;inset:0;background:rgba(0,0,0,.6)}
+.drawer-panel{position:absolute;bottom:0;left:0;right:0;background:var(--surface);border-radius:16px 16px 0 0;max-height:72vh;display:flex;flex-direction:column;overflow:hidden}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;border-bottom:1px solid var(--border);font-size:14px;font-weight:500}
+.drawer-close{background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1;padding:0 4px}
+.drawer-list{overflow-y:auto;flex:1;padding:8px 0}
+.drawer-ch{padding:12px 20px;font-size:14px;color:var(--muted);cursor:pointer;border-left:3px solid transparent;transition:all .1s}
+.drawer-ch:hover{background:var(--surface2);color:var(--text)}
+.drawer-ch.active{color:var(--accent);border-left-color:var(--accent);background:var(--surface2)}
+.drawer-ch.done{color:var(--green)}
 
-.url-input-wrap {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
+/* BG audio notice */
+#bg-notice{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 16px;font-size:12px;color:var(--muted);display:none;z-index:50;white-space:nowrap}
 
-input[type=text] {
-  flex: 1;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  font-size: 14px;
-  padding: 10px 12px;
-  font-family: 'DM Sans', sans-serif;
-  outline: none;
-  transition: border 0.2s;
-}
-
-input[type=text]:focus { border-color: var(--accent); }
-input[type=text]::placeholder { color: var(--muted); }
-
-.btn {
-  background: var(--accent);
-  color: #13120f;
-  border: none;
-  border-radius: 8px;
-  padding: 10px 18px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  font-family: 'DM Sans', sans-serif;
-  transition: opacity 0.15s;
-  white-space: nowrap;
-}
-.btn:hover { opacity: 0.85; }
-.btn:active { opacity: 0.7; }
-.btn.secondary {
-  background: var(--surface2);
-  color: var(--text);
-  border: 1px solid var(--border);
-}
-
-.connection-status {
-  font-size: 12px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  display: none;
-  margin-bottom: 12px;
-}
-.connection-status.ok { background: rgba(122,171,138,0.15); color: var(--green); display: block; }
-.connection-status.err { background: rgba(192,80,80,0.15); color: #c05050; display: block; }
-
-.divider {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 20px 0;
-}
-
-/* ── MAIN APP ── */
-#app { flex: 1; display: none; flex-direction: column; overflow: hidden; height: 100dvh; }
-
-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.logo { font-family: 'Lora', serif; font-size: 17px; color: var(--accent); flex-shrink: 0; }
-.book-name { font-size: 12px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.header-btn {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  border-radius: 6px;
-  padding: 5px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  font-family: 'DM Sans', sans-serif;
-  flex-shrink: 0;
-}
-.header-btn:hover { color: var(--text); border-color: var(--accent); }
-
-.layout {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
-/* ── SIDEBAR ── */
-.sidebar {
-  width: 220px;
-  min-width: 220px;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.sidebar-head {
-  padding: 10px 14px;
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-  border-bottom: 1px solid var(--border);
-}
-
-.ch-list { flex: 1; overflow-y: auto; }
-.ch-list::-webkit-scrollbar { width: 3px; }
-.ch-list::-webkit-scrollbar-thumb { background: var(--border); }
-
-.ch-item {
-  padding: 9px 14px;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
-  border-left: 2px solid transparent;
-  line-height: 1.4;
-  transition: all 0.1s;
-}
-.ch-item:hover { color: var(--text); background: var(--surface2); }
-.ch-item.active { color: var(--accent); border-left-color: var(--accent); background: var(--surface2); }
-.ch-item.done { color: var(--green); }
-
-/* ── READER ── */
-.reader-wrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.reader-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: 36px 20px;
-}
-.reader-scroll::-webkit-scrollbar { width: 3px; }
-.reader-scroll::-webkit-scrollbar-thumb { background: var(--border); }
-
-.reader-body {
-  max-width: 620px;
-  margin: 0 auto;
-  font-family: 'Lora', serif;
-  font-size: 17px;
-  line-height: 1.9;
-  font-weight: 400;
-}
-
-.reader-body p { margin-bottom: 1.1em; }
-.reader-body h1,.reader-body h2,.reader-body h3 {
-  color: var(--accent);
-  font-weight: 500;
-  margin: 1.8em 0 0.6em;
-  font-size: 20px;
-}
-
-/* DROP ZONE inside reader */
-#drop-zone {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 40px 24px;
-  text-align: center;
-}
-
-.drop-ring {
-  width: 88px; height: 88px;
-  border: 2px dashed var(--border);
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 36px;
-  transition: all 0.2s;
-}
-#drop-zone.drag-over .drop-ring { border-color: var(--accent); background: var(--accent-dim); }
-
-#drop-zone h2 { font-family: 'Lora', serif; font-size: 20px; font-weight: 400; }
-#drop-zone p { font-size: 13px; color: var(--muted); max-width: 280px; line-height: 1.6; }
-
-/* ── PLAYER ── */
-.player {
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  padding: 0 16px 12px;
-}
-
-.prog-bar { width: 100%; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; margin-bottom: 12px; }
-.prog-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.4s; }
-
-.player-row1 {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.ctrl-btn {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 50%;
-  width: 36px; height: 36px;
-  cursor: pointer;
-  font-size: 13px;
-  display: flex; align-items: center; justify-content: center;
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-.ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
-.ctrl-btn:disabled { opacity: 0.3; pointer-events: none; }
-
-.play-btn {
-  background: var(--accent) !important;
-  border-color: var(--accent) !important;
-  color: #13120f !important;
-  width: 46px !important; height: 46px !important;
-  font-size: 18px !important;
-}
-.play-btn:hover { opacity: 0.85; }
-
-.player-info { flex: 1; min-width: 0; }
-.now-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
-.now-ch { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-.dot.on { background: var(--green); animation: blink 1.2s infinite; }
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
-
-.player-row2 {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-top: 10px;
-  flex-wrap: wrap;
-}
-
-.setting { display: flex; align-items: center; gap: 8px; }
-.setting label { font-size: 11px; color: var(--muted); white-space: nowrap; }
-
-input[type=range] {
-  -webkit-appearance: none;
-  width: 100px; height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  outline: none;
-  border: none;
-  padding: 0;
-}
-input[type=range]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px; height: 16px;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-}
-
-.speed-val { font-size: 12px; color: var(--accent); min-width: 36px; }
-
-/* loading overlay */
-.loading-bar {
-  position: fixed; top: 0; left: 0; right: 0; height: 2px;
-  background: var(--accent);
-  display: none;
-  animation: loadpulse 1s infinite alternate;
-}
-@keyframes loadpulse { from{opacity:0.4} to{opacity:1} }
-
-/* Mobile adjustments */
-@media (max-width: 540px) {
-  .sidebar { display: none; }
-  .reader-body { font-size: 16px; }
-}
-
-.hidden { display: none !important; }
+@media(max-width:540px){.sidebar{display:none}.reader-body{font-size:16px}}
+.hidden{display:none!important}
 </style>
 </head>
 <body>
-
 <div class="loading-bar" id="loading-bar"></div>
+<div id="bg-notice">🎧 Playing in background</div>
 
-<!-- ── SETUP SCREEN ── -->
+<!-- SETUP -->
 <div id="setup-screen">
   <div class="setup-logo">📖 Bookvoice</div>
   <div class="setup-sub">Emma TTS · EPUB Reader</div>
-
   <div class="setup-card">
     <h2>Connect to your TTS server</h2>
-    <p>Paste the public URL from your Google Colab notebook. It looks like:<br>
-    <code style="color:var(--accent);font-size:12px">https://xxxx-xx-xx-xxx-xx.ngrok-free.app</code></p>
-
+    <p>Paste the public URL from your Google Colab notebook.</p>
     <div class="url-input-wrap">
-      <input type="text" id="server-url" placeholder="https://your-url.ngrok-free.app" autocomplete="off" autocorrect="off" autocapitalize="off">
-      <button class="btn" onclick="testConnection()">Test</button>
+      <input type="text" id="server-url" placeholder="https://your-url.trycloudflare.com" autocomplete="off" autocorrect="off" autocapitalize="off">
+      <button class="btn" onclick="testConn()">Test</button>
     </div>
-    <div class="connection-status" id="conn-status"></div>
-
-    <button class="btn" style="width:100%" onclick="saveAndContinue()">Connect & Open Reader</button>
-
-    <hr class="divider">
-    <p style="font-size:12px;margin-bottom:0">Don't have the Colab notebook yet? <a href="https://github.com" style="color:var(--accent)">Follow the setup guide →</a></p>
+    <div class="conn-status" id="conn-status"></div>
+    <button class="btn" style="width:100%;margin-bottom:12px" onclick="saveAndGo()">Connect & Open Reader</button>
+    <div id="resume-banner">
+      <p id="resume-text">Resume reading?</p>
+      <div class="resume-btns">
+        <button class="btn" style="flex:1" onclick="doResume()">▶ Resume</button>
+        <button class="btn ghost" style="flex:1" onclick="dismissResume()">Start fresh</button>
+      </div>
+    </div>
+    <hr class="div">
+    <p style="font-size:12px;margin-bottom:0">Need help? Check the setup guide.</p>
   </div>
 </div>
 
-<!-- ── MAIN APP ── -->
+<!-- CHAPTER DRAWER -->
+<div id="ch-drawer">
+  <div class="drawer-bg" onclick="closeDrawer()"></div>
+  <div class="drawer-panel">
+    <div class="drawer-head">
+      <span>Chapters</span>
+      <button class="drawer-close" onclick="closeDrawer()">×</button>
+    </div>
+    <div class="drawer-list" id="drawer-list"></div>
+  </div>
+</div>
+
+<!-- APP -->
 <div id="app">
   <header>
     <span class="logo">📖</span>
     <span class="book-name" id="book-name">No book loaded</span>
-    <button class="header-btn" onclick="document.getElementById('file-input').click()">+ EPUB</button>
-    <button class="header-btn" onclick="changeServer()">Server</button>
+    <button class="hbtn" onclick="openDrawer()">☰ Ch.</button>
+    <button class="hbtn" onclick="document.getElementById('file-input').click()">+ EPUB</button>
+    <button class="hbtn" onclick="changeServer()">Server</button>
   </header>
-
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar-head">Chapters</div>
       <div class="ch-list" id="ch-list"></div>
     </aside>
-
     <div class="reader-wrap">
-      <!-- Drop zone -->
       <div id="drop-zone">
         <div class="drop-ring">📚</div>
         <h2>Open an EPUB</h2>
-        <p>Tap the + EPUB button above, or drop a file here. Your book never leaves your device.</p>
+        <p>Tap + EPUB above, or drop a file here.</p>
         <button class="btn" onclick="document.getElementById('file-input').click()">Choose EPUB file</button>
       </div>
-
-      <!-- Reader -->
       <div class="reader-scroll hidden" id="reader-scroll">
         <div class="reader-body" id="reader-body"></div>
       </div>
-
-      <!-- Player -->
       <div class="player hidden" id="player">
         <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
         <div class="player-row1">
-          <button class="ctrl-btn" onclick="prevChapter()" title="Prev">⏮</button>
+          <button class="ctrl-btn" onclick="prevCh()">⏮</button>
           <button class="ctrl-btn play-btn" id="play-btn" onclick="togglePlay()">▶</button>
-          <button class="ctrl-btn" onclick="nextChapter()" title="Next">⏭</button>
+          <button class="ctrl-btn" onclick="nextCh()">⏭</button>
           <div class="player-info">
-            <div class="now-label">
-              <span class="dot" id="dot"></span>
-              <span id="status-txt">Ready</span>
-            </div>
+            <div class="now-label"><span class="dot" id="dot"></span><span id="status-txt">Ready</span></div>
             <div class="now-ch" id="now-ch">—</div>
           </div>
         </div>
         <div class="player-row2">
           <div class="setting">
             <label>Speed</label>
-            <input type="range" id="speed" min="0.5" max="3.0" step="0.1" value="1.7" oninput="onSpeed(this.value)">
+            <input type="range" id="speed-sl" min="0.5" max="3.0" step="0.1" value="1.7" oninput="onSpeed(this.value)">
             <span class="speed-val" id="speed-val">1.7×</span>
           </div>
         </div>
@@ -447,48 +208,134 @@ input[type=range]::-webkit-slider-thumb {
     </div>
   </div>
 </div>
-
 <input type="file" id="file-input" accept=".epub" style="display:none">
 
 <script>
-// ── CONFIG ──
+// ── STATE ──
 let serverUrl = localStorage.getItem('tts_server') || '';
-let chapters = [];
-let currentChapter = 0;
-let isPlaying = false;
-let speed = 1.7;
-let audioQueue = [];
-let currentAudio = null;
-let chunkIndex = 0;
+let chapters = [], currentChapter = 0, isPlaying = false;
+let speed = parseFloat(localStorage.getItem('tts_speed') || '1.7');
 let isStopped = false;
-let chunks = []; // text chunks for current chapter
+let sentences = [], sentenceEls = [], sentenceIndex = 0;
+let currentAudio = null, nextAudioPromise = null;
+let bookTitle = '';
+let wakeLock = null;
 
-// ── SETUP ──
-if (serverUrl) showApp();
+// ── WAKE LOCK (keeps screen/audio alive on iOS) ──
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+    }
+  } catch(e) {}
+}
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release(); wakeLock = null; }
+}
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && isPlaying) {
+    await requestWakeLock();
+  }
+});
 
-async function testConnection() {
+// ── MEDIA SESSION (lock screen controls) ──
+function setupMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: bookTitle || 'Bookvoice',
+    artist: chapters[currentChapter]?.title || '',
+    album: 'Emma TTS'
+  });
+  navigator.mediaSession.setActionHandler('play', () => { if (!isPlaying) togglePlay(); });
+  navigator.mediaSession.setActionHandler('pause', () => { if (isPlaying) togglePlay(); });
+  navigator.mediaSession.setActionHandler('previoustrack', prevCh);
+  navigator.mediaSession.setActionHandler('nexttrack', nextCh);
+}
+
+function updateMediaSessionChapter() {
+  if (!('mediaSession' in navigator)) return;
+  if (navigator.mediaSession.metadata) {
+    navigator.mediaSession.metadata.artist = chapters[currentChapter]?.title || '';
+  }
+}
+
+// ── POSITION SAVE/RESTORE ──
+function savePosition() {
+  if (!bookTitle) return;
+  localStorage.setItem('bv_pos', JSON.stringify({
+    book: bookTitle,
+    chapter: currentChapter,
+    sentence: sentenceIndex,
+    ts: Date.now()
+  }));
+}
+
+function loadSavedPosition() {
+  try {
+    const raw = localStorage.getItem('bv_pos');
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function clearSavedPosition() {
+  localStorage.removeItem('bv_pos');
+}
+
+// ── SETUP SCREEN ──
+(function init() {
+  document.getElementById('speed-sl').value = speed;
+  document.getElementById('speed-val').textContent = speed.toFixed(1) + '×';
+  if (serverUrl) {
+    showResumeBanner();
+    showApp();
+  }
+})();
+
+function showResumeBanner() {
+  const pos = loadSavedPosition();
+  if (!pos) return;
+  const ago = Math.round((Date.now() - pos.ts) / 60000);
+  const agoStr = ago < 60 ? ago + 'm ago' : Math.round(ago/60) + 'h ago';
+  document.getElementById('resume-text').textContent =
+    `Resume "${pos.book}"?\nChapter ${pos.chapter + 1} · ${agoStr}`;
+  document.getElementById('resume-banner').style.display = 'block';
+}
+
+let pendingResume = null;
+
+function doResume() {
+  const pos = loadSavedPosition();
+  if (pos) pendingResume = pos;
+  dismissResume();
+  // User still needs to re-open the EPUB — show a prompt
+  document.getElementById('drop-zone').querySelector('p').textContent =
+    'Re-open "' + (pos?.book || 'your book') + '" to resume from where you left off.';
+}
+
+function dismissResume() {
+  document.getElementById('resume-banner').style.display = 'none';
+}
+
+async function testConn() {
   const url = document.getElementById('server-url').value.trim().replace(/\/$/, '');
-  const status = document.getElementById('conn-status');
-  status.className = 'connection-status';
-  status.textContent = 'Testing...';
-  status.style.display = 'block';
+  const el = document.getElementById('conn-status');
+  el.className = 'conn-status'; el.textContent = 'Testing...'; el.style.display = 'block';
   try {
     const r = await fetch(url + '/ping', { signal: AbortSignal.timeout(8000) });
     const d = await r.json();
     if (d.ok) {
-      status.className = 'connection-status ok';
-      status.textContent = '✓ Connected! Emma is ready.';
+      el.className = 'conn-status ok'; el.textContent = '✓ Connected! Emma is ready.';
       serverUrl = url;
-    } else throw new Error();
+    } else throw 0;
   } catch {
-    status.className = 'connection-status err';
-    status.textContent = '✗ Could not connect. Make sure Colab is running.';
+    el.className = 'conn-status err'; el.textContent = '✗ Could not connect. Check Colab is running.';
   }
 }
 
-function saveAndContinue() {
+function saveAndGo() {
   const url = document.getElementById('server-url').value.trim().replace(/\/$/, '');
-  if (!url) { alert('Please enter the server URL first.'); return; }
+  if (!url) { alert('Enter server URL first.'); return; }
   serverUrl = url;
   localStorage.setItem('tts_server', serverUrl);
   showApp();
@@ -503,13 +350,17 @@ function changeServer() {
   document.getElementById('server-url').value = serverUrl;
   document.getElementById('app').style.display = 'none';
   document.getElementById('setup-screen').style.display = 'flex';
+  showResumeBanner();
 }
 
-// ── EPUB PARSING ──
+// ── DRAWER ──
+function openDrawer() { document.getElementById('ch-drawer').classList.add('open'); }
+function closeDrawer() { document.getElementById('ch-drawer').classList.remove('open'); }
+
+// ── EPUB LOAD ──
 document.getElementById('file-input').addEventListener('change', e => {
   if (e.target.files[0]) loadEpub(e.target.files[0]);
 });
-
 const dz = document.getElementById('drop-zone');
 dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
 dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
@@ -523,10 +374,10 @@ async function loadEpub(file) {
   showLoading(true);
   try {
     const zip = await JSZip.loadAsync(file);
-    const containerXml = await zip.file('META-INF/container.xml').async('text');
-    const containerDoc = new DOMParser().parseFromString(containerXml, 'application/xml');
-    const opfPath = containerDoc.querySelector('rootfile').getAttribute('full-path');
-    const opfDir = opfPath.includes('/') ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1) : '';
+    const cxml = await zip.file('META-INF/container.xml').async('text');
+    const cdoc = new DOMParser().parseFromString(cxml, 'application/xml');
+    const opfPath = cdoc.querySelector('rootfile').getAttribute('full-path');
+    const opfDir = opfPath.includes('/') ? opfPath.substring(0, opfPath.lastIndexOf('/')+1) : '';
     const opfText = await zip.file(opfPath).async('text');
     const opfDoc = new DOMParser().parseFromString(opfText, 'application/xml');
 
@@ -539,186 +390,246 @@ async function loadEpub(file) {
     chapters = [];
 
     for (const id of spineIds) {
-      const href = manifest[id];
-      if (!href) continue;
-      const fullPath = opfDir + href;
-      const entry = zip.file(fullPath) || zip.file(href);
-      if (!entry) continue;
+      const href = manifest[id]; if (!href) continue;
+      const entry = zip.file(opfDir+href) || zip.file(href); if (!entry) continue;
       const html = await entry.async('text');
       const doc = new DOMParser().parseFromString(html, 'text/html');
       doc.querySelectorAll('script,style,nav').forEach(el => el.remove());
       const text = (doc.body?.innerText || doc.body?.textContent || '').trim();
       if (text.length < 50) continue;
-      const title = (doc.querySelector('title')?.textContent || doc.querySelector('h1,h2,h3')?.textContent || `Part ${chapters.length + 1}`).trim().substring(0, 70);
+      const title = (doc.querySelector('title')?.textContent || doc.querySelector('h1,h2,h3')?.textContent || `Part ${chapters.length+1}`).trim().substring(0,70);
       chapters.push({ title, html: doc.body.innerHTML, text });
     }
 
     if (!chapters.length) { alert('Could not parse this EPUB.'); return; }
 
-    document.getElementById('book-name').textContent = file.name.replace('.epub', '');
+    bookTitle = file.name.replace('.epub','');
+    document.getElementById('book-name').textContent = bookTitle;
     document.getElementById('drop-zone').classList.add('hidden');
     document.getElementById('reader-scroll').classList.remove('hidden');
     document.getElementById('player').classList.remove('hidden');
 
     buildSidebar();
-    loadChapter(0);
-  } catch(e) {
-    alert('Error loading EPUB: ' + e.message);
-  }
+    setupMediaSession();
+
+    // Check if we should resume
+    if (pendingResume && pendingResume.book === bookTitle) {
+      loadChapter(pendingResume.chapter);
+      sentenceIndex = pendingResume.sentence || 0;
+      pendingResume = null;
+    } else {
+      loadChapter(0);
+    }
+
+  } catch(e) { alert('Error loading EPUB: ' + e.message); }
   showLoading(false);
 }
 
+// ── SIDEBAR ──
 function buildSidebar() {
-  const list = document.getElementById('ch-list');
-  list.innerHTML = '';
-  chapters.forEach((ch, i) => {
-    const div = document.createElement('div');
-    div.className = 'ch-item';
-    div.id = `chi-${i}`;
-    div.textContent = ch.title;
-    div.onclick = () => { stopAudio(); loadChapter(i); };
-    list.appendChild(div);
+  ['ch-list','drawer-list'].forEach(id => {
+    const el = document.getElementById(id);
+    el.innerHTML = '';
+    const isMini = id === 'drawer-list';
+    chapters.forEach((ch, i) => {
+      const div = document.createElement('div');
+      div.className = isMini ? 'drawer-ch' : 'ch-item';
+      div.id = (isMini ? 'dch-' : 'chi-') + i;
+      div.textContent = ch.title;
+      div.onclick = () => { if (isMini) closeDrawer(); jumpTo(i); };
+      el.appendChild(div);
+    });
   });
 }
 
+function setSidebarActive(i) {
+  ['chi-','dch-'].forEach(pfx => {
+    document.querySelectorAll('[id^="'+pfx+'"]').forEach((el,idx) => {
+      const n = parseInt(el.id.replace(pfx,''));
+      el.className = el.className.split(' ')[0] + (n===i?' active':n<i?' done':'');
+    });
+  });
+  const item = document.getElementById('chi-'+i);
+  if (item) item.scrollIntoView({ block:'nearest', behavior:'smooth' });
+}
+
+// ── CHAPTER ──
 function loadChapter(i) {
   currentChapter = i;
-  chunkIndex = 0;
-
-  document.querySelectorAll('.ch-item').forEach((el, idx) => {
-    el.className = 'ch-item' + (idx === i ? ' active' : '') + (idx < i ? ' done' : '');
-  });
-
-  const item = document.getElementById(`chi-${i}`);
-  if (item) item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-
-  document.getElementById('reader-body').innerHTML = chapters[i].html;
+  sentenceIndex = 0;
+  setSidebarActive(i);
+  const body = document.getElementById('reader-body');
+  body.innerHTML = chapters[i].html;
   document.getElementById('reader-scroll').scrollTop = 0;
   document.getElementById('now-ch').textContent = chapters[i].title;
-
-  const pct = chapters.length > 1 ? (i / (chapters.length - 1)) * 100 : 0;
+  const pct = chapters.length > 1 ? (i/(chapters.length-1))*100 : 0;
   document.getElementById('prog-fill').style.width = pct + '%';
-
-  // Split into chunks (~500 chars each, on sentence boundaries)
-  chunks = splitIntoChunks(chapters[i].text, 500);
-
-  if (isPlaying) playChunksFrom(0);
+  wrapSentences(body);
+  updateMediaSessionChapter();
 }
 
-// ── CHUNKING ──
-function splitIntoChunks(text, maxLen) {
-  const sentences = text.match(/[^.!?…]+[.!?…]*["']?\s*/g) || [text];
-  const result = [];
-  let current = '';
-  for (const s of sentences) {
-    if ((current + s).length > maxLen && current) {
-      result.push(current.trim());
-      current = s;
-    } else {
-      current += s;
-    }
-  }
-  if (current.trim()) result.push(current.trim());
-  return result;
+function jumpTo(i) {
+  const wasPlaying = isPlaying;
+  stopAudio();
+  loadChapter(i);
+  if (wasPlaying) { isPlaying = true; document.getElementById('play-btn').textContent='⏸'; setTimeout(()=>playFrom(0),80); }
 }
 
-// ── TTS AUDIO ──
-async function playChunksFrom(idx) {
-  isStopped = false;
-  chunkIndex = idx;
-
-  for (let i = idx; i < chunks.length; i++) {
-    if (isStopped) return;
-    chunkIndex = i;
-    setStatus('speaking');
-    await speakChunk(chunks[i]);
-    if (isStopped) return;
-  }
-
-  // Chapter done
-  if (currentChapter < chapters.length - 1) {
-    document.getElementById(`chi-${currentChapter}`)?.classList.add('done');
-    loadChapter(currentChapter + 1);
+// ── SENTENCE WRAP ──
+function wrapSentences(container) {
+  sentences = []; sentenceEls = [];
+  const blocks = container.querySelectorAll('p,li,h1,h2,h3,h4,blockquote');
+  if (!blocks.length) {
+    const t = container.innerText.trim();
+    if (t) { sentences.push(t); container.innerHTML=`<span class="sentence" data-si="0">${esc(t)}</span>`; }
   } else {
-    // Book finished
-    isPlaying = false;
-    document.getElementById('play-btn').textContent = '▶';
-    setStatus('done');
+    blocks.forEach(block => {
+      const t = block.innerText.trim(); if (!t) return;
+      const parts = splitSent(t);
+      block.innerHTML = parts.map((s,j) => `<span class="sentence" data-si="${sentences.length+j}">${esc(s)}</span>`).join(' ');
+      sentences.push(...parts);
+    });
   }
-}
-
-function speakChunk(text) {
-  return new Promise((resolve, reject) => {
-    const params = new URLSearchParams({ text, speed });
-    const url = `${serverUrl}/tts?${params}`;
-    const audio = new Audio();
-    currentAudio = audio;
-    audio.src = url;
-    audio.onended = resolve;
-    audio.onerror = () => {
-      // fallback: skip chunk
-      resolve();
-    };
-    audio.play().catch(() => resolve());
+  sentenceEls = [...container.querySelectorAll('.sentence')];
+  sentenceEls.forEach((el,i) => {
+    el.addEventListener('click', () => {
+      if (!isPlaying) { isPlaying=true; document.getElementById('play-btn').textContent='⏸'; }
+      stopAudio();
+      setTimeout(()=>playFrom(i),50);
+    });
   });
 }
+
+function splitSent(text) {
+  return (text.match(/[^.!?…]+[.!?…]*["\u2019\u201d]?\s*/g)||[text]).map(s=>s.trim()).filter(Boolean);
+}
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── PLAYBACK WITH PREFETCH ──
+async function playFrom(idx) {
+  isStopped = false;
+  sentenceIndex = idx;
+  await requestWakeLock();
+
+  // Kick off prefetch for first sentence
+  nextAudioPromise = idx < sentences.length ? prefetch(sentences[idx]) : null;
+
+  for (let i = idx; i < sentences.length; i++) {
+    if (isStopped) return;
+    sentenceIndex = i;
+    savePosition();
+
+    highlightSentence(i);
+    setStatus('speaking');
+
+    const audio = await nextAudioPromise;
+    nextAudioPromise = null;
+
+    // Prefetch next while current plays
+    if (i+1 < sentences.length && !isStopped) {
+      nextAudioPromise = prefetch(sentences[i+1]);
+    }
+
+    if (isStopped) return;
+    await playSentenceAudio(audio);
+    if (isStopped) return;
+  }
+
+  // Done with chapter
+  if (!isStopped) {
+    if (currentChapter < chapters.length - 1) {
+      document.getElementById('chi-'+currentChapter)?.classList.add('done');
+      document.getElementById('dch-'+currentChapter)?.classList.add('done');
+      loadChapter(currentChapter + 1);
+      await new Promise(r => setTimeout(r,100));
+      if (!isStopped) playFrom(0);
+    } else {
+      isPlaying = false;
+      document.getElementById('play-btn').textContent = '▶';
+      setStatus('done');
+      clearHighlight();
+      releaseWakeLock();
+      clearSavedPosition();
+    }
+  }
+}
+
+function prefetch(text) {
+  return new Promise(resolve => {
+    const url = `${serverUrl}/tts?` + new URLSearchParams({text, speed});
+    const audio = new Audio();
+    audio.preload = 'auto';
+    // Silence trick: keeps iOS audio session alive for background play
+    audio.src = url;
+    const done = () => resolve(audio);
+    audio.oncanplaythrough = done;
+    audio.onerror = done;
+    setTimeout(done, 5000); // safety timeout
+  });
+}
+
+function playSentenceAudio(audio) {
+  return new Promise(resolve => {
+    if (!audio) { resolve(); return; }
+    currentAudio = audio;
+    audio.onended = () => { currentAudio = null; resolve(); };
+    audio.onerror = () => { currentAudio = null; resolve(); };
+    const p = audio.play();
+    if (p) p.catch(() => resolve());
+  });
+}
+
+function highlightSentence(i) {
+  sentenceEls.forEach(el => el.classList.remove('reading'));
+  const el = sentenceEls[i];
+  if (!el) return;
+  el.classList.add('reading');
+  el.scrollIntoView({ block:'center', behavior:'smooth' });
+}
+function clearHighlight() { sentenceEls.forEach(el => el.classList.remove('reading')); }
 
 function stopAudio() {
   isStopped = true;
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.src = '';
-    currentAudio = null;
-  }
+  if (currentAudio) { try { currentAudio.pause(); currentAudio.src=''; } catch(e){} currentAudio=null; }
+  if (nextAudioPromise) { nextAudioPromise.then(a=>{ try{a.src='';}catch(e){} }); nextAudioPromise=null; }
+  clearHighlight();
+  releaseWakeLock();
 }
 
+// ── CONTROLS ──
 function togglePlay() {
   if (isPlaying) {
     isPlaying = false;
     stopAudio();
     document.getElementById('play-btn').textContent = '▶';
     setStatus('paused');
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   } else {
     if (!chapters.length) return;
     isPlaying = true;
     document.getElementById('play-btn').textContent = '⏸';
-    playChunksFrom(chunkIndex);
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    playFrom(sentenceIndex);
   }
 }
 
-function prevChapter() {
-  stopAudio();
-  if (currentChapter > 0) loadChapter(currentChapter - 1);
-}
-
-function nextChapter() {
-  stopAudio();
-  if (currentChapter < chapters.length - 1) loadChapter(currentChapter + 1);
-}
+function prevCh() { const w=isPlaying; stopAudio(); if(currentChapter>0){loadChapter(currentChapter-1);if(w){isPlaying=true;document.getElementById('play-btn').textContent='⏸';setTimeout(()=>playFrom(0),80);}} }
+function nextCh() { const w=isPlaying; stopAudio(); if(currentChapter<chapters.length-1){loadChapter(currentChapter+1);if(w){isPlaying=true;document.getElementById('play-btn').textContent='⏸';setTimeout(()=>playFrom(0),80);}} }
 
 function onSpeed(val) {
   speed = parseFloat(val);
   document.getElementById('speed-val').textContent = speed.toFixed(1) + '×';
-  if (isPlaying) {
-    stopAudio();
-    playChunksFrom(chunkIndex);
-  }
+  localStorage.setItem('tts_speed', speed);
+  if (isPlaying) { const i=sentenceIndex; stopAudio(); setTimeout(()=>{ isStopped=false; isPlaying=true; playFrom(i); },50); }
 }
 
-function setStatus(state) {
-  const dot = document.getElementById('dot');
-  const txt = document.getElementById('status-txt');
-  if (state === 'speaking') { dot.className = 'dot on'; txt.textContent = 'Reading...'; }
-  else if (state === 'paused') { dot.className = 'dot'; txt.textContent = 'Paused'; }
-  else if (state === 'done') { dot.className = 'dot'; txt.textContent = 'Finished'; }
+function setStatus(s) {
+  const dot=document.getElementById('dot'), txt=document.getElementById('status-txt');
+  if(s==='speaking'){dot.className='dot on';txt.textContent='Reading...';}
+  else if(s==='paused'){dot.className='dot';txt.textContent='Paused';}
+  else if(s==='done'){dot.className='dot';txt.textContent='Finished';}
 }
-
-function showLoading(on) {
-  document.getElementById('loading-bar').style.display = on ? 'block' : 'none';
-}
-
-// Init
-document.getElementById('speed-val').textContent = speed.toFixed(1) + '×';
+function showLoading(on) { document.getElementById('loading-bar').style.display=on?'block':'none'; }
 </script>
 </body>
 </html>
