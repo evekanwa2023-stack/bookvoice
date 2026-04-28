@@ -317,6 +317,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
   <header>
     <span class="logo">📖</span>
     <span class="book-name" id="book-name">No book loaded</span>
+    <button class="hbtn" onclick="showLibrary()">📚</button>
     <button class="hbtn" onclick="openSheet('ch-drawer')">☰</button>
     <button class="hbtn" onclick="document.getElementById('file-input').click()">+ EPUB</button>
     <button class="hbtn" onclick="openSheet('dl-sheet')">⬇</button>
@@ -356,6 +357,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
           <div class="player-info">
             <div class="now-label"><span class="dot" id="dot"></span><span id="status-txt">Ready</span></div>
             <div class="now-ch" id="now-ch">—</div>
+            <div id="sent-counter" style="font-size:10px;color:var(--accent);margin-top:2px"></div>
           </div>
           <button class="ctrl-btn" onclick="locateSentence()" title="Go to current sentence">◎</button>
         </div>
@@ -377,6 +379,7 @@ let chapters = [], currentChapter = 0, isPlaying = false;
 let speed = parseFloat(localStorage.getItem('tts_speed') || '1.7');
 let fontSize = parseInt(localStorage.getItem('tts_fs') || '17');
 let isStopped = false;
+let playSession = 0; // increments on every new playFrom call, guards against double-audio
 let sentences = [], sentenceEls = [], sentenceIndex = 0;
 let currentAudio = null;
 let audioBuffer = {}; // key: sentence index → Promise<Audio>
@@ -691,8 +694,13 @@ function wrapSentences(container) {
   sentenceEls=[...container.querySelectorAll('.sentence')];
   sentenceEls.forEach((el,i)=>{
     el.addEventListener('click',()=>{
-      if(!isPlaying){isPlaying=true;document.getElementById('play-btn').textContent='⏸';}
-      stopAudio(); setTimeout(()=>playFrom(i),50);
+      // Stop everything first, wait for it to fully stop, then start new
+      stopAudio();
+      isPlaying=true;
+      document.getElementById('play-btn').textContent='⏸';
+      if('mediaSession' in navigator) navigator.mediaSession.playbackState='playing';
+      // Use longer timeout to ensure previous audio loop has exited
+      setTimeout(()=>{ if(isPlaying) playFrom(i); },150);
     });
   });
 }
@@ -876,6 +884,7 @@ async function fetchAudioBlob(text) {
 
 async function playFrom(startSentIdx) {
   isStopped = false;
+  const mySession = ++playSession; // capture this session's ID
   sentenceIndex = startSentIdx;
   await requestWakeLock();
   buildParagraphs();
@@ -887,7 +896,7 @@ async function playFrom(startSentIdx) {
   nextFetch = fetchAudioBlob(applyPronunciation(paragraphs[pIdx]?.text || ''));
 
   while (pIdx < paragraphs.length) {
-    if (isStopped) return;
+    if (isStopped || mySession !== playSession) return;
     const para = paragraphs[pIdx];
 
     // Get the pre-fetched blob
@@ -910,7 +919,7 @@ async function playFrom(startSentIdx) {
     savePosition();
 
     await playDecodedWithHighlight(arrayBuf, para, firstSent);
-    if (isStopped) return;
+    if (isStopped || mySession !== playSession) return;
 
     startSentIdx = 0;
     pIdx++;
