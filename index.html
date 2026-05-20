@@ -732,9 +732,9 @@ function closeSheet(id) { document.getElementById(id).classList.remove('open'); 
 // ── NCX/NAV TITLE LOOKUP ──
 // Builds a map of href -> chapter title from toc.ncx or nav.xhtml
 async function buildNcxTitleMap(zip, opfDoc, opfDir) {
-  const titleMap = {}; // href (without anchor) -> title
+  const titleMap = {}; // baseHref -> first title for that file
+  const anchorMap = {}; // baseHref -> [{anchor, title}, ...] sorted by document order
 
-  // Try NCX first
   const spineEl = opfDoc.querySelector('spine');
   const tocId = spineEl ? spineEl.getAttribute('toc') : null;
   let ncxHref = null;
@@ -743,7 +743,6 @@ async function buildNcxTitleMap(zip, opfDoc, opfDir) {
     const item = opfDoc.querySelector(`manifest item[id="${tocId}"]`);
     if (item) ncxHref = item.getAttribute('href');
   }
-  // Fallback: find toc.ncx in manifest
   if (!ncxHref) {
     const ncxItem = opfDoc.querySelector('manifest item[media-type="application/x-dtbncx+xml"]');
     if (ncxItem) ncxHref = ncxItem.getAttribute('href');
@@ -754,24 +753,30 @@ async function buildNcxTitleMap(zip, opfDoc, opfDir) {
     if (ncxFile) {
       const ncxText = await ncxFile.async('text');
       const ncxDoc = new DOMParser().parseFromString(ncxText, 'application/xml');
-      const navPoints = ncxDoc.querySelectorAll('navPoint');
-      navPoints.forEach(np => {
+      ncxDoc.querySelectorAll('navPoint').forEach(np => {
         const label = np.querySelector('navLabel text');
         const content = np.querySelector('content');
         if (label && content) {
           const src = content.getAttribute('src') || '';
-          // Strip anchor (#...) to get base href
-          const baseHref = src.split('#')[0];
+          const parts = src.split('#');
+          const baseHref = parts[0];
+          const anchor = parts[1] || null;
           const title = label.textContent.trim();
-          if (title && title.toLowerCase() !== 'unknown' && !titleMap[baseHref]) {
-            titleMap[baseHref] = title;
-          }
+          if (!title || title.toLowerCase() === 'unknown') return;
+
+          // Store first title for this file
+          if (!titleMap[baseHref]) titleMap[baseHref] = title;
+          if (!titleMap[baseHref.split('/').pop()]) titleMap[baseHref.split('/').pop()] = title;
+
+          // Store anchor entries for splitting
+          if (!anchorMap[baseHref]) anchorMap[baseHref] = [];
+          anchorMap[baseHref].push({ anchor, title });
         }
       });
     }
   }
 
-  // Also try nav.xhtml (EPUB3)
+  // EPUB3 nav
   const navItem = opfDoc.querySelector('manifest item[properties="nav"]');
   if (navItem) {
     const navHref = navItem.getAttribute('href');
@@ -779,17 +784,94 @@ async function buildNcxTitleMap(zip, opfDoc, opfDir) {
     if (navFile) {
       const navText = await navFile.async('text');
       const navDoc = new DOMParser().parseFromString(navText, 'text/html');
-      navDoc.querySelectorAll('nav[epub\\:type="toc"] a, nav a').forEach(a => {
-        const href = (a.getAttribute('href') || '').split('#')[0];
+      navDoc.querySelectorAll('nav a').forEach(a => {
+        const src = a.getAttribute('href') || '';
+        const parts = src.split('#');
+        const baseHref = parts[0];
         const title = a.textContent.trim();
-        if (href && title && title.toLowerCase() !== 'unknown' && !titleMap[href]) {
-          titleMap[href] = title;
+        if (baseHref && title && title.toLowerCase() !== 'unknown' && !titleMap[baseHref]) {
+          titleMap[baseHref] = title;
         }
       });
     }
   }
 
-  return titleMap;
+  return { titleMap, anchorMap };
+}
+
+// Split an HTML document into sections based on anchor points
+// Returns [{title, html, text}] or null if splitting not needed
+function splitHtmlByAnchors(htmlContent, anchors) {
+  if (!anchors || anchors.length <= 1) return null;
+
+  // Find the first anchor that actually exists in the HTML
+  // anchors = [{anchor, title}] where anchor may be null (= start of file)
+  const sections = [];
+
+  // Build split points: find position of each anchor in the raw HTML
+  const splitPoints = []; // [{pos, title}]
+
+  for (const {anchor, title} of anchors) {
+    if (!anchor) {
+      // No anchor = start of file
+      splitPoints.push({ pos: 0, title });
+    } else {
+      // Find anchor in HTML: id="anchor" or name="anchor"
+      const patterns = [
+        `id="${anchor}"`,
+        `id='${anchor}'`,
+        `name="${anchor}"`,
+        `name='${anchor}'`
+      ];
+      let pos = -1;
+      for (const pat of patterns) {
+        const idx = htmlContent.indexOf(pat);
+        if (idx !== -1) { pos = idx; break; }
+      }
+      if (pos !== -1) {
+        // Walk back to find the opening tag
+        const tagStart = htmlContent.lastIndexOf('<', pos);
+        splitPoints.push({ pos: tagStart >= 0 ? tagStart : pos, title });
+      }
+    }
+  }
+
+  // Sort by position and deduplicate
+  // At position 0: keep first title (that's Chapter 1)
+  // At other positions: keep last title (most specific)
+  splitPoints.sort((a, b) => a.pos - b.pos);
+  const unique = [];
+  for (const sp of splitPoints) {
+    if (unique.length > 0 && sp.pos <= unique[unique.length-1].pos + 10) {
+      // Same position — only update if not position 0
+      if (unique[unique.length-1].pos > 0) unique[unique.length-1].title = sp.title;
+      // At pos 0: keep first title (Chapter 1, not Chapter 2)
+    } else {
+      unique.push({...sp});
+    }
+  }
+
+  if (unique.length <= 1) return null;
+
+  // Extract body content
+  const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  const bodyHtml = bodyMatch ? bodyMatch[1] : htmlContent;
+  const bodyStart = bodyMatch ? htmlContent.indexOf(bodyMatch[1]) : 0;
+
+  // Split body at each anchor position
+  for (let i = 0; i < unique.length; i++) {
+    const startPos = Math.max(0, unique[i].pos - bodyStart);
+    const endPos = i + 1 < unique.length ? unique[i+1].pos - bodyStart : bodyHtml.length;
+    const sectionHtml = bodyHtml.substring(startPos, endPos);
+
+    // Extract text
+    const text = sectionHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (text.length >= 50) {
+      sections.push({ title: unique[i].title, html: sectionHtml, text });
+    }
+  }
+
+  return sections.length > 1 ? sections : null;
 }
 
 // ── EPUB ──
@@ -813,7 +895,7 @@ async function loadEpub(file) {
     opfDoc.querySelectorAll('manifest item').forEach(item => { manifest[item.getAttribute('id')]=item.getAttribute('href'); });
     const spineIds=[...opfDoc.querySelectorAll('spine itemref')].map(r=>r.getAttribute('idref'));
     // Build NCX title map first
-    const ncxTitles = await buildNcxTitleMap(zip, opfDoc, opfDir);
+    const { titleMap: ncxTitles, anchorMap: ncxAnchors } = await buildNcxTitleMap(zip, opfDoc, opfDir);
     chapters=[];
     let lastKnownTitle = '';
     for (const id of spineIds) {
@@ -824,7 +906,6 @@ async function loadEpub(file) {
       doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
       const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
       if(text.length<50) continue;
-      // Skip cover/TOC/copyright pages that just carry-forward wrong titles
       const lowerText = text.toLowerCase().substring(0, 400);
       const isJunkPage = (
         (lowerText.includes('table of contents') && text.length < 1500) ||
@@ -833,12 +914,28 @@ async function loadEpub(file) {
         (lowerText.includes('copyright') && !lowerText.includes('chapter') && text.length < 400)
       );
       if (isJunkPage) continue;
-      // NCX title takes priority; fall back to HTML heading; fall back to text-based detection
+
+      const words=text.split(/\s+/).length;
+      const mins=Math.round(words/200);
+
+      // Check if this file has multiple chapters via anchor splitting
+      const anchors = ncxAnchors[href] || ncxAnchors[href.split('/').pop()];
+      if (anchors && anchors.length > 1) {
+        const sections = splitHtmlByAnchors(html, anchors);
+        if (sections && sections.length > 1) {
+          sections.forEach(sec => {
+            if (sec.text.length >= 50) {
+              const w = sec.text.split(/\s+/).length;
+              chapters.push({ title: sec.title, html: sec.html, text: sec.text, mins: Math.round(w/200) });
+              lastKnownTitle = sec.title;
+            }
+          });
+          continue;
+        }
+      }
+
       const ncxTitle = ncxTitles[href] || ncxTitles[href.split('/').pop()];
       const htmlTitle = doc.querySelector('h1,h2,h3')?.textContent?.trim();
-      // Don't use <title> tag - it's always the book title, not chapter name
-      // Last resort: extract chapter name from start of text content
-      // Pattern: "BookTitle Chapter N text..." or "Chapter N text..."
       let textTitle = null;
       const textMatch = text.match(/^(?:[A-Z][^.!?\n]{0,30}\s+)?(Chapter\s+\d+|Prologue|Epilogue|Part\s+\d+|Introduction|Preface)/i);
       if (textMatch) textTitle = (textMatch[1] || textMatch[0]).trim();
@@ -846,11 +943,8 @@ async function loadEpub(file) {
       rawTitle = rawTitle.replace(/^unknown$/i, lastKnownTitle || `Part ${chapters.length+1}`);
       const isRealTitle = rawTitle && rawTitle.toLowerCase() !== 'unknown' && rawTitle.toLowerCase() !== 'cover';
       if (isRealTitle) lastKnownTitle = rawTitle;
-      // If this is a junk title (Cover), use chapter counter instead
       if (!isRealTitle && !lastKnownTitle) rawTitle = `Part ${chapters.length+1}`;
       const title = rawTitle.substring(0,70);
-      const words=text.split(/\s+/).length;
-      const mins=Math.round(words/200);
       chapters.push({title,html:doc.body.innerHTML,text,mins});
     }
     if(!chapters.length){alert('Could not parse this EPUB.');return;}
@@ -2411,7 +2505,7 @@ async function openBookFromLibrary(idx) {
           const manifest={};
           opfDoc.querySelectorAll('manifest item').forEach(item => { manifest[item.getAttribute('id')]=item.getAttribute('href'); });
           const spineIds=[...opfDoc.querySelectorAll('spine itemref')].map(r=>r.getAttribute('idref'));
-          const ncxTitles2 = await buildNcxTitleMap(zip, opfDoc, opfDir);
+          const { titleMap: ncxTitles2, anchorMap: ncxAnchors2 } = await buildNcxTitleMap(zip, opfDoc, opfDir);
           const loadedChapters=[];
           let lastTitle2 = '';
           for (const id of spineIds) {
@@ -2431,6 +2525,21 @@ async function openBookFromLibrary(idx) {
         (lowerText.includes('copyright') && !lowerText.includes('chapter') && text.length < 400)
       );
       if (isJunkPage) continue;
+            // Anchor splitting
+            const anchors2 = ncxAnchors2[href] || ncxAnchors2[href.split('/').pop()];
+            if (anchors2 && anchors2.length > 1) {
+              const sections2 = splitHtmlByAnchors(html, anchors2);
+              if (sections2 && sections2.length > 1) {
+                sections2.forEach(sec => {
+                  if (sec.text.length >= 50) {
+                    const w2s = sec.text.split(/\s+/).length;
+                    loadedChapters.push({ title: sec.title, html: sec.html, text: sec.text, mins: Math.round(w2s/200) });
+                    lastTitle2 = sec.title;
+                  }
+                });
+                continue;
+              }
+            }
             const ncxTitle2 = ncxTitles2[href] || ncxTitles2[href.split('/').pop()];
             const htmlTitle2 = doc.querySelector('h1,h2,h3')?.textContent?.trim();
             let textTitle2 = null;
@@ -2519,7 +2628,7 @@ async function loadEpubFromLibrary(file, titleOverride) {
     const manifest={};
     opfDoc.querySelectorAll('manifest item').forEach(item => { manifest[item.getAttribute('id')]=item.getAttribute('href'); });
     const spineIds=[...opfDoc.querySelectorAll('spine itemref')].map(r=>r.getAttribute('idref'));
-    const ncxTitlesLib = await buildNcxTitleMap(zip, opfDoc, opfDir);
+    const { titleMap: ncxTitlesLib, anchorMap: ncxAnchorsLib } = await buildNcxTitleMap(zip, opfDoc, opfDir);
     const loadedChapters=[];
     let lastTitleLib = '';
     for (const id of spineIds) {
@@ -2539,6 +2648,21 @@ async function loadEpubFromLibrary(file, titleOverride) {
         (lowerText.includes('copyright') && !lowerText.includes('chapter') && text.length < 400)
       );
       if (isJunkPage) continue;
+      // Anchor splitting
+      const anchorsLib = ncxAnchorsLib[href] || ncxAnchorsLib[href.split('/').pop()];
+      if (anchorsLib && anchorsLib.length > 1) {
+        const sectionsLib = splitHtmlByAnchors(html, anchorsLib);
+        if (sectionsLib && sectionsLib.length > 1) {
+          sectionsLib.forEach(sec => {
+            if (sec.text.length >= 50) {
+              const wL = sec.text.split(/\s+/).length;
+              loadedChapters.push({ title: sec.title, html: sec.html, text: sec.text, mins: Math.round(wL/200) });
+              lastTitleLib = sec.title;
+            }
+          });
+          continue;
+        }
+      }
       const ncxT = ncxTitlesLib[href] || ncxTitlesLib[href.split('/').pop()];
       const htmlT = doc.querySelector('h1,h2,h3')?.textContent?.trim();
       let textTitleLib = null;
@@ -2910,4 +3034,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.5.1 | built 2026-05-20 22:15 -->
+<!-- Bookvoice v2.5.3 | built 2026-05-20 23:10 -->
