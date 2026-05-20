@@ -728,6 +728,70 @@ function changeServer() { document.getElementById('server-url').value=serverUrl;
 function openSheet(id) { document.getElementById(id).classList.add('open'); }
 function closeSheet(id) { document.getElementById(id).classList.remove('open'); }
 
+
+// ── NCX/NAV TITLE LOOKUP ──
+// Builds a map of href -> chapter title from toc.ncx or nav.xhtml
+async function buildNcxTitleMap(zip, opfDoc, opfDir) {
+  const titleMap = {}; // href (without anchor) -> title
+
+  // Try NCX first
+  const spineEl = opfDoc.querySelector('spine');
+  const tocId = spineEl ? spineEl.getAttribute('toc') : null;
+  let ncxHref = null;
+
+  if (tocId) {
+    const item = opfDoc.querySelector(`manifest item[id="${tocId}"]`);
+    if (item) ncxHref = item.getAttribute('href');
+  }
+  // Fallback: find toc.ncx in manifest
+  if (!ncxHref) {
+    const ncxItem = opfDoc.querySelector('manifest item[media-type="application/x-dtbncx+xml"]');
+    if (ncxItem) ncxHref = ncxItem.getAttribute('href');
+  }
+
+  if (ncxHref) {
+    const ncxFile = zip.file(opfDir + ncxHref) || zip.file(ncxHref);
+    if (ncxFile) {
+      const ncxText = await ncxFile.async('text');
+      const ncxDoc = new DOMParser().parseFromString(ncxText, 'application/xml');
+      const navPoints = ncxDoc.querySelectorAll('navPoint');
+      navPoints.forEach(np => {
+        const label = np.querySelector('navLabel text');
+        const content = np.querySelector('content');
+        if (label && content) {
+          const src = content.getAttribute('src') || '';
+          // Strip anchor (#...) to get base href
+          const baseHref = src.split('#')[0];
+          const title = label.textContent.trim();
+          if (title && title.toLowerCase() !== 'unknown' && !titleMap[baseHref]) {
+            titleMap[baseHref] = title;
+          }
+        }
+      });
+    }
+  }
+
+  // Also try nav.xhtml (EPUB3)
+  const navItem = opfDoc.querySelector('manifest item[properties="nav"]');
+  if (navItem) {
+    const navHref = navItem.getAttribute('href');
+    const navFile = zip.file(opfDir + navHref) || zip.file(navHref);
+    if (navFile) {
+      const navText = await navFile.async('text');
+      const navDoc = new DOMParser().parseFromString(navText, 'text/html');
+      navDoc.querySelectorAll('nav[epub\\:type="toc"] a, nav a').forEach(a => {
+        const href = (a.getAttribute('href') || '').split('#')[0];
+        const title = a.textContent.trim();
+        if (href && title && title.toLowerCase() !== 'unknown' && !titleMap[href]) {
+          titleMap[href] = title;
+        }
+      });
+    }
+  }
+
+  return titleMap;
+}
+
 // ── EPUB ──
 document.getElementById('file-input').addEventListener('change', e => { if (e.target.files[0]) loadEpub(e.target.files[0]); });
 const dz = document.getElementById('drop-zone');
@@ -748,6 +812,8 @@ async function loadEpub(file) {
     const manifest={};
     opfDoc.querySelectorAll('manifest item').forEach(item => { manifest[item.getAttribute('id')]=item.getAttribute('href'); });
     const spineIds=[...opfDoc.querySelectorAll('spine itemref')].map(r=>r.getAttribute('idref'));
+    // Build NCX title map first
+    const ncxTitles = await buildNcxTitleMap(zip, opfDoc, opfDir);
     chapters=[];
     for (const id of spineIds) {
       const href=manifest[id]; if(!href) continue;
@@ -757,8 +823,12 @@ async function loadEpub(file) {
       doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
       const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
       if(text.length<50) continue;
-      const title=(doc.querySelector('title')?.textContent||doc.querySelector('h1,h2,h3')?.textContent||`Part ${chapters.length+1}`).trim().substring(0,70);
-      // estimate read time (avg 200wpm)
+      // NCX title takes priority over HTML title/heading
+      const ncxTitle = ncxTitles[href] || ncxTitles[href.split('/').pop()];
+      const htmlTitle = doc.querySelector('h1,h2,h3')?.textContent?.trim();
+      const pageTitle = doc.querySelector('title')?.textContent?.trim();
+      const rawTitle = ncxTitle || htmlTitle || pageTitle || `Part ${chapters.length+1}`;
+      const title = rawTitle.replace(/^unknown$/i, `Part ${chapters.length+1}`).substring(0,70);
       const words=text.split(/\s+/).length;
       const mins=Math.round(words/200);
       chapters.push({title,html:doc.body.innerHTML,text,mins});
@@ -2315,6 +2385,7 @@ async function openBookFromLibrary(idx) {
           const manifest={};
           opfDoc.querySelectorAll('manifest item').forEach(item => { manifest[item.getAttribute('id')]=item.getAttribute('href'); });
           const spineIds=[...opfDoc.querySelectorAll('spine itemref')].map(r=>r.getAttribute('idref'));
+          const ncxTitles2 = await buildNcxTitleMap(zip, opfDoc, opfDir);
           const loadedChapters=[];
           for (const id of spineIds) {
             const href=manifest[id]; if(!href) continue;
@@ -2324,7 +2395,11 @@ async function openBookFromLibrary(idx) {
             doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
             const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
             if(text.length<50) continue;
-            const title=(doc.querySelector('title')?.textContent||doc.querySelector('h1,h2,h3')?.textContent||`Part ${loadedChapters.length+1}`).trim().substring(0,70);
+            const ncxTitle2 = ncxTitles2[href] || ncxTitles2[href.split('/').pop()];
+            const htmlTitle2 = doc.querySelector('h1,h2,h3')?.textContent?.trim();
+            const pageTitle2 = doc.querySelector('title')?.textContent?.trim();
+            const rawTitle2 = ncxTitle2 || htmlTitle2 || pageTitle2 || `Part ${loadedChapters.length+1}`;
+            const title = rawTitle2.replace(/^unknown$/i, `Part ${loadedChapters.length+1}`).substring(0,70);
             const words=text.split(/\s+/).length;
             loadedChapters.push({title,html:doc.body.innerHTML,text,mins:Math.round(words/200)});
           }
