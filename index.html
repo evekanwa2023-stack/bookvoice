@@ -825,19 +825,24 @@ async function loadEpub(file) {
       const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
       if(text.length<50) continue;
       // Skip cover/TOC/copyright pages that just carry-forward wrong titles
-      const lowerText = text.toLowerCase().substring(0, 200);
+      const lowerText = text.toLowerCase().substring(0, 400);
       const isJunkPage = (
-        (lowerText.includes('table of contents') && text.length < 500) ||
+        (lowerText.includes('table of contents') && text.length < 1500) ||
         (lowerText.startsWith('cover') && text.length < 200) ||
         (lowerText.includes('all rights reserved') && text.length < 300) ||
         (lowerText.includes('copyright') && !lowerText.includes('chapter') && text.length < 400)
       );
       if (isJunkPage) continue;
-      // NCX title takes priority; fall back to HTML heading; fall back to last known title
+      // NCX title takes priority; fall back to HTML heading; fall back to text-based detection
       const ncxTitle = ncxTitles[href] || ncxTitles[href.split('/').pop()];
       const htmlTitle = doc.querySelector('h1,h2,h3')?.textContent?.trim();
-      const pageTitle = doc.querySelector('title')?.textContent?.trim();
-      let rawTitle = ncxTitle || htmlTitle || pageTitle || lastKnownTitle || `Part ${chapters.length+1}`;
+      // Don't use <title> tag - it's always the book title, not chapter name
+      // Last resort: extract chapter name from start of text content
+      // Pattern: "BookTitle Chapter N text..." or "Chapter N text..."
+      let textTitle = null;
+      const textMatch = text.match(/^(?:[A-Z][^.!?\n]{0,30}\s+)?(Chapter\s+\d+|Prologue|Epilogue|Part\s+\d+|Introduction|Preface)/i);
+      if (textMatch) textTitle = (textMatch[1] || textMatch[0]).trim();
+      let rawTitle = ncxTitle || htmlTitle || textTitle || lastKnownTitle || `Part ${chapters.length+1}`;
       rawTitle = rawTitle.replace(/^unknown$/i, lastKnownTitle || `Part ${chapters.length+1}`);
       const isRealTitle = rawTitle && rawTitle.toLowerCase() !== 'unknown' && rawTitle.toLowerCase() !== 'cover';
       if (isRealTitle) lastKnownTitle = rawTitle;
@@ -2418,9 +2423,9 @@ async function openBookFromLibrary(idx) {
             const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
             if(text.length<50) continue;
       // Skip cover/TOC/copyright pages that just carry-forward wrong titles
-      const lowerText = text.toLowerCase().substring(0, 200);
+      const lowerText = text.toLowerCase().substring(0, 400);
       const isJunkPage = (
-        (lowerText.includes('table of contents') && text.length < 500) ||
+        (lowerText.includes('table of contents') && text.length < 1500) ||
         (lowerText.startsWith('cover') && text.length < 200) ||
         (lowerText.includes('all rights reserved') && text.length < 300) ||
         (lowerText.includes('copyright') && !lowerText.includes('chapter') && text.length < 400)
@@ -2428,8 +2433,10 @@ async function openBookFromLibrary(idx) {
       if (isJunkPage) continue;
             const ncxTitle2 = ncxTitles2[href] || ncxTitles2[href.split('/').pop()];
             const htmlTitle2 = doc.querySelector('h1,h2,h3')?.textContent?.trim();
-            const pageTitle2 = doc.querySelector('title')?.textContent?.trim();
-            let rawTitle2 = ncxTitle2 || htmlTitle2 || pageTitle2 || lastTitle2 || `Part ${loadedChapters.length+1}`;
+            let textTitle2 = null;
+            const textMatch2 = text.match(/^(?:[A-Z][^.!?\n]{0,30}\s+)?(Chapter\s+\d+|Prologue|Epilogue|Part\s+\d+|Introduction|Preface)/i);
+            if (textMatch2) textTitle2 = (textMatch2[1] || textMatch2[0]).trim();
+            let rawTitle2 = ncxTitle2 || htmlTitle2 || textTitle2 || lastTitle2 || `Part ${loadedChapters.length+1}`;
             rawTitle2 = rawTitle2.replace(/^unknown$/i, lastTitle2 || `Part ${loadedChapters.length+1}`);
             const isRealTitle2 = rawTitle2 && rawTitle2.toLowerCase() !== 'unknown' && rawTitle2.toLowerCase() !== 'cover';
             if (isRealTitle2) lastTitle2 = rawTitle2;
@@ -2524,9 +2531,9 @@ async function loadEpubFromLibrary(file, titleOverride) {
       const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
       if(text.length<50) continue;
       // Skip cover/TOC/copyright pages that just carry-forward wrong titles
-      const lowerText = text.toLowerCase().substring(0, 200);
+      const lowerText = text.toLowerCase().substring(0, 400);
       const isJunkPage = (
-        (lowerText.includes('table of contents') && text.length < 500) ||
+        (lowerText.includes('table of contents') && text.length < 1500) ||
         (lowerText.startsWith('cover') && text.length < 200) ||
         (lowerText.includes('all rights reserved') && text.length < 300) ||
         (lowerText.includes('copyright') && !lowerText.includes('chapter') && text.length < 400)
@@ -2534,8 +2541,10 @@ async function loadEpubFromLibrary(file, titleOverride) {
       if (isJunkPage) continue;
       const ncxT = ncxTitlesLib[href] || ncxTitlesLib[href.split('/').pop()];
       const htmlT = doc.querySelector('h1,h2,h3')?.textContent?.trim();
-      const pageT = doc.querySelector('title')?.textContent?.trim();
-      let rawT = ncxT || htmlT || pageT || lastTitleLib || `Part ${loadedChapters.length+1}`;
+      let textTitleLib = null;
+      const textMatchLib = text.match(/^(?:[A-Z][^.!?\n]{0,30}\s+)?(Chapter\s+\d+|Prologue|Epilogue|Part\s+\d+|Introduction|Preface)/i);
+      if (textMatchLib) textTitleLib = (textMatchLib[1] || textMatchLib[0]).trim();
+      let rawT = ncxT || htmlT || textTitleLib || lastTitleLib || `Part ${loadedChapters.length+1}`;
       rawT = rawT.replace(/^unknown$/i, lastTitleLib || `Part ${loadedChapters.length+1}`);
       if (rawT && rawT.toLowerCase() !== 'unknown') lastTitleLib = rawT;
       const title = rawT.substring(0,70);
