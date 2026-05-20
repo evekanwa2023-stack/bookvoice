@@ -1397,6 +1397,9 @@ async function playFrom(startSentIdx) {
   let nextBlobPromise = pIdx+1 < paragraphs.length
     ? fetchAudioBlob(applyPronunciation(paragraphs[pIdx+1].text))
     : null;
+  let nextNextBlobPromise = pIdx+2 < paragraphs.length
+    ? fetchAudioBlob(applyPronunciation(paragraphs[pIdx+2].text))
+    : null;
 
   while (pIdx < paragraphs.length) {
     if (isStopped || mySession !== playSession) {
@@ -1416,11 +1419,12 @@ async function playFrom(startSentIdx) {
     audio.src = currentBlobUrl;
     currentAudio = audio;
 
-    // Wait for enough data then play
+    // Wait for enough data then play — short timeout, blob is already downloaded
     await new Promise(r => {
+      if (audio.readyState >= 3) { r(); return; }
       audio.oncanplay = r;
       audio.onerror = r;
-      setTimeout(r, 3000);
+      setTimeout(r, 500);
     });
 
     if (isStopped || mySession !== playSession) {
@@ -1476,9 +1480,10 @@ async function playFrom(startSentIdx) {
     if (pIdx < paragraphs.length) {
       try {
         currentBlobUrl = await nextBlobPromise;
-        // Pre-fetch the one after
-        nextBlobPromise = pIdx+1 < paragraphs.length
-          ? fetchAudioBlob(applyPronunciation(paragraphs[pIdx+1].text))
+        // Shift the preload queue
+        nextBlobPromise = nextNextBlobPromise;
+        nextNextBlobPromise = pIdx+2 < paragraphs.length
+          ? fetchAudioBlob(applyPronunciation(paragraphs[pIdx+2].text))
           : null;
       } catch(e) { pIdx++; continue; }
     }
@@ -3045,4 +3050,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.5.4 | built 2026-05-20 23:55 -->
+<!-- Bookvoice v2.5.5 | built 2026-05-21 00:10 -->
