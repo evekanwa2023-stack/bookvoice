@@ -815,6 +815,7 @@ async function loadEpub(file) {
     // Build NCX title map first
     const ncxTitles = await buildNcxTitleMap(zip, opfDoc, opfDir);
     chapters=[];
+    let lastKnownTitle = '';
     for (const id of spineIds) {
       const href=manifest[id]; if(!href) continue;
       const entry=zip.file(opfDir+href)||zip.file(href); if(!entry) continue;
@@ -823,12 +824,14 @@ async function loadEpub(file) {
       doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
       const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
       if(text.length<50) continue;
-      // NCX title takes priority over HTML title/heading
+      // NCX title takes priority; fall back to HTML heading; fall back to last known title
       const ncxTitle = ncxTitles[href] || ncxTitles[href.split('/').pop()];
       const htmlTitle = doc.querySelector('h1,h2,h3')?.textContent?.trim();
       const pageTitle = doc.querySelector('title')?.textContent?.trim();
-      const rawTitle = ncxTitle || htmlTitle || pageTitle || `Part ${chapters.length+1}`;
-      const title = rawTitle.replace(/^unknown$/i, `Part ${chapters.length+1}`).substring(0,70);
+      let rawTitle = ncxTitle || htmlTitle || pageTitle || lastKnownTitle || `Part ${chapters.length+1}`;
+      rawTitle = rawTitle.replace(/^unknown$/i, lastKnownTitle || `Part ${chapters.length+1}`);
+      if (rawTitle && rawTitle.toLowerCase() !== 'unknown') lastKnownTitle = rawTitle;
+      const title = rawTitle.substring(0,70);
       const words=text.split(/\s+/).length;
       const mins=Math.round(words/200);
       chapters.push({title,html:doc.body.innerHTML,text,mins});
@@ -2387,6 +2390,7 @@ async function openBookFromLibrary(idx) {
           const spineIds=[...opfDoc.querySelectorAll('spine itemref')].map(r=>r.getAttribute('idref'));
           const ncxTitles2 = await buildNcxTitleMap(zip, opfDoc, opfDir);
           const loadedChapters=[];
+          let lastTitle2 = '';
           for (const id of spineIds) {
             const href=manifest[id]; if(!href) continue;
             const entry=zip.file(opfDir+href)||zip.file(href); if(!entry) continue;
@@ -2398,8 +2402,10 @@ async function openBookFromLibrary(idx) {
             const ncxTitle2 = ncxTitles2[href] || ncxTitles2[href.split('/').pop()];
             const htmlTitle2 = doc.querySelector('h1,h2,h3')?.textContent?.trim();
             const pageTitle2 = doc.querySelector('title')?.textContent?.trim();
-            const rawTitle2 = ncxTitle2 || htmlTitle2 || pageTitle2 || `Part ${loadedChapters.length+1}`;
-            const title = rawTitle2.replace(/^unknown$/i, `Part ${loadedChapters.length+1}`).substring(0,70);
+            let rawTitle2 = ncxTitle2 || htmlTitle2 || pageTitle2 || lastTitle2 || `Part ${loadedChapters.length+1}`;
+            rawTitle2 = rawTitle2.replace(/^unknown$/i, lastTitle2 || `Part ${loadedChapters.length+1}`);
+            if (rawTitle2 && rawTitle2.toLowerCase() !== 'unknown') lastTitle2 = rawTitle2;
+            const title = rawTitle2.substring(0,70);
             const words=text.split(/\s+/).length;
             loadedChapters.push({title,html:doc.body.innerHTML,text,mins:Math.round(words/200)});
           }
