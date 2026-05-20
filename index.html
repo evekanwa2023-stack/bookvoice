@@ -1603,6 +1603,8 @@ function clearDriveCache() {
         // Remove driveFileId from library entries
         library.forEach(b => { delete b.driveFileId; });
         saveLibrary();
+        // Also clear in-memory epub cache so stale data doesn't linger
+        Object.keys(epubCache).forEach(k => delete epubCache[k]);
         showToast('✓ Drive cache cleared (' + files.length + ' files)');
       });
     })
@@ -2357,12 +2359,16 @@ async function openBookFromLibrary(idx) {
   }
 
   // 1. Already in memory cache — open instantly
-  if (epubCache[book.title]) {
-    chapters = epubCache[book.title].chapters;
+  // But skip cache if titles look stale (all Unknown)
+  const cached = epubCache[book.title];
+  if (cached && cached.chapters && cached.chapters.some(c => c.title && c.title.toLowerCase() !== 'unknown')) {
+    chapters = cached.chapters;
     bookTitle = book.title;
     showReader();
     return;
   }
+  // Clear stale cache so we re-parse fresh
+  if (cached) delete epubCache[book.title];
 
   // 2. Try Drive
   if (gdriveEnabled && isTokenValid()) {
