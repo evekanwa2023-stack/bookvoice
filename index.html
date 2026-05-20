@@ -809,17 +809,19 @@ async function buildNcxTitleMap(zip, opfDoc, opfDir) {
           const src = content.getAttribute('src') || '';
           const parts = src.split('#');
           const baseHref = parts[0];
+          const baseHrefDecoded = decodeURIComponent(baseHref);
           const anchor = parts[1] || null;
           const title = label.textContent.trim();
           if (!title || title.toLowerCase() === 'unknown') return;
 
-          // Store first title for this file
-          if (!titleMap[baseHref]) titleMap[baseHref] = title;
-          if (!titleMap[baseHref.split('/').pop()]) titleMap[baseHref.split('/').pop()] = title;
-
-          // Store anchor entries for splitting
-          if (!anchorMap[baseHref]) anchorMap[baseHref] = [];
-          anchorMap[baseHref].push({ anchor, title });
+          // Store both encoded and decoded versions
+          for (const key of [baseHref, baseHrefDecoded]) {
+            if (!titleMap[key]) titleMap[key] = title;
+            const bn = key.split('/').pop();
+            if (!titleMap[bn]) titleMap[bn] = title;
+            if (!anchorMap[key]) anchorMap[key] = [];
+            anchorMap[key].push({ anchor, title });
+          }
         }
       });
     }
@@ -950,7 +952,7 @@ async function loadEpub(file) {
     let pendingTitles = [];
     for (const id of spineIds) {
       const href=manifest[id]; if(!href) continue;
-      const entry=zip.file(opfDir+href)||zip.file(href); if(!entry) continue;
+      const hrefDecoded=decodeURIComponent(href); const entry=zip.file(opfDir+href)||zip.file(href)||zip.file(opfDir+hrefDecoded)||zip.file(hrefDecoded); if(!entry) continue;
       const html=await entry.async('text');
       const doc=new DOMParser().parseFromString(html,'text/html');
       doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
@@ -970,7 +972,8 @@ async function loadEpub(file) {
       const mins=Math.round(words/200);
 
       // If this file has NCX entries but tiny content, queue titles for next files
-      const ncxEntries = ncxAnchors[href] || ncxAnchors[href.split('/').pop()];
+      const hrefDec = decodeURIComponent(href);
+      const ncxEntries = ncxAnchors[href] || ncxAnchors[hrefDec] || ncxAnchors[href.split('/').pop()] || ncxAnchors[hrefDec.split('/').pop()];
       if (ncxEntries && ncxEntries.length > 0 && text.length < 50) {
         // Queue all titles in order
         ncxEntries.forEach(e => pendingTitles.push(e.title));
@@ -993,7 +996,7 @@ async function loadEpub(file) {
         }
       }
 
-      const ncxTitle = ncxTitles[href] || ncxTitles[href.split('/').pop()];
+      const ncxTitle = ncxTitles[href] || ncxTitles[decodeURIComponent(href)] || ncxTitles[href.split('/').pop()] || ncxTitles[decodeURIComponent(href).split('/').pop()];
       const htmlTitle = doc.querySelector('h1,h2,h3')?.textContent?.trim();
       let textTitle = null;
       const textMatch = text.match(/^(?:[A-Z][^.!?\n]{0,30}\s+)?(Chapter\s+\d+|Prologue|Epilogue|Part\s+\d+|Introduction|Preface)/i);
@@ -2763,7 +2766,7 @@ async function openBookFromLibrary(idx) {
           let lastTitle2 = '';
           for (const id of spineIds) {
             const href=manifest[id]; if(!href) continue;
-            const entry=zip.file(opfDir+href)||zip.file(href); if(!entry) continue;
+            const hrefDecoded=decodeURIComponent(href); const entry=zip.file(opfDir+href)||zip.file(href)||zip.file(opfDir+hrefDecoded)||zip.file(hrefDecoded); if(!entry) continue;
             const html=await entry.async('text');
             const doc=new DOMParser().parseFromString(html,'text/html');
             doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
@@ -2778,7 +2781,7 @@ async function openBookFromLibrary(idx) {
       );
       if (isJunkPage) continue;
             // Anchor splitting
-            const anchors2 = ncxAnchors2[href] || ncxAnchors2[href.split('/').pop()];
+            const hrefDec2 = decodeURIComponent(href); const anchors2 = ncxAnchors2[href] || ncxAnchors2[hrefDec2] || ncxAnchors2[href.split('/').pop()] || ncxAnchors2[hrefDec2.split('/').pop()];
             if (anchors2 && anchors2.length > 1) {
               const sections2 = splitHtmlByAnchors(html, anchors2);
               if (sections2 && sections2.length > 1) {
@@ -2885,7 +2888,7 @@ async function loadEpubFromLibrary(file, titleOverride) {
     let lastTitleLib = '';
     for (const id of spineIds) {
       const href=manifest[id]; if(!href) continue;
-      const entry=zip.file(opfDir+href)||zip.file(href); if(!entry) continue;
+      const hrefDecoded=decodeURIComponent(href); const entry=zip.file(opfDir+href)||zip.file(href)||zip.file(opfDir+hrefDecoded)||zip.file(hrefDecoded); if(!entry) continue;
       const html=await entry.async('text');
       const doc=new DOMParser().parseFromString(html,'text/html');
       doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
@@ -2900,7 +2903,7 @@ async function loadEpubFromLibrary(file, titleOverride) {
       );
       if (isJunkPage) continue;
       // Anchor splitting
-      const anchorsLib = ncxAnchorsLib[href] || ncxAnchorsLib[href.split('/').pop()];
+      const hrefDecLib = decodeURIComponent(href); const anchorsLib = ncxAnchorsLib[href] || ncxAnchorsLib[hrefDecLib] || ncxAnchorsLib[href.split('/').pop()] || ncxAnchorsLib[hrefDecLib.split('/').pop()];
       if (anchorsLib && anchorsLib.length > 1) {
         const sectionsLib = splitHtmlByAnchors(html, anchorsLib);
         if (sectionsLib && sectionsLib.length > 1) {
@@ -3285,4 +3288,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.6.2 | built 2026-05-21 01:15 -->
+<!-- Bookvoice v2.6.3 | built 2026-05-21 02:00 -->
