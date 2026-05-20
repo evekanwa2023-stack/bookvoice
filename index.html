@@ -824,13 +824,25 @@ async function loadEpub(file) {
       doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
       const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
       if(text.length<50) continue;
+      // Skip cover/TOC/copyright pages that just carry-forward wrong titles
+      const lowerText = text.toLowerCase().substring(0, 200);
+      const isJunkPage = (
+        (lowerText.includes('table of contents') && text.length < 500) ||
+        (lowerText.startsWith('cover') && text.length < 200) ||
+        (lowerText.includes('all rights reserved') && text.length < 300) ||
+        (lowerText.includes('copyright') && !lowerText.includes('chapter') && text.length < 400)
+      );
+      if (isJunkPage) continue;
       // NCX title takes priority; fall back to HTML heading; fall back to last known title
       const ncxTitle = ncxTitles[href] || ncxTitles[href.split('/').pop()];
       const htmlTitle = doc.querySelector('h1,h2,h3')?.textContent?.trim();
       const pageTitle = doc.querySelector('title')?.textContent?.trim();
       let rawTitle = ncxTitle || htmlTitle || pageTitle || lastKnownTitle || `Part ${chapters.length+1}`;
       rawTitle = rawTitle.replace(/^unknown$/i, lastKnownTitle || `Part ${chapters.length+1}`);
-      if (rawTitle && rawTitle.toLowerCase() !== 'unknown') lastKnownTitle = rawTitle;
+      const isRealTitle = rawTitle && rawTitle.toLowerCase() !== 'unknown' && rawTitle.toLowerCase() !== 'cover';
+      if (isRealTitle) lastKnownTitle = rawTitle;
+      // If this is a junk title (Cover), use chapter counter instead
+      if (!isRealTitle && !lastKnownTitle) rawTitle = `Part ${chapters.length+1}`;
       const title = rawTitle.substring(0,70);
       const words=text.split(/\s+/).length;
       const mins=Math.round(words/200);
@@ -2405,12 +2417,23 @@ async function openBookFromLibrary(idx) {
             doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
             const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
             if(text.length<50) continue;
+      // Skip cover/TOC/copyright pages that just carry-forward wrong titles
+      const lowerText = text.toLowerCase().substring(0, 200);
+      const isJunkPage = (
+        (lowerText.includes('table of contents') && text.length < 500) ||
+        (lowerText.startsWith('cover') && text.length < 200) ||
+        (lowerText.includes('all rights reserved') && text.length < 300) ||
+        (lowerText.includes('copyright') && !lowerText.includes('chapter') && text.length < 400)
+      );
+      if (isJunkPage) continue;
             const ncxTitle2 = ncxTitles2[href] || ncxTitles2[href.split('/').pop()];
             const htmlTitle2 = doc.querySelector('h1,h2,h3')?.textContent?.trim();
             const pageTitle2 = doc.querySelector('title')?.textContent?.trim();
             let rawTitle2 = ncxTitle2 || htmlTitle2 || pageTitle2 || lastTitle2 || `Part ${loadedChapters.length+1}`;
             rawTitle2 = rawTitle2.replace(/^unknown$/i, lastTitle2 || `Part ${loadedChapters.length+1}`);
-            if (rawTitle2 && rawTitle2.toLowerCase() !== 'unknown') lastTitle2 = rawTitle2;
+            const isRealTitle2 = rawTitle2 && rawTitle2.toLowerCase() !== 'unknown' && rawTitle2.toLowerCase() !== 'cover';
+            if (isRealTitle2) lastTitle2 = rawTitle2;
+            if (!isRealTitle2 && !lastTitle2) rawTitle2 = `Part ${loadedChapters.length+1}`;
             const title = rawTitle2.substring(0,70);
             const words=text.split(/\s+/).length;
             loadedChapters.push({title,html:doc.body.innerHTML,text,mins:Math.round(words/200)});
@@ -2489,7 +2512,9 @@ async function loadEpubFromLibrary(file, titleOverride) {
     const manifest={};
     opfDoc.querySelectorAll('manifest item').forEach(item => { manifest[item.getAttribute('id')]=item.getAttribute('href'); });
     const spineIds=[...opfDoc.querySelectorAll('spine itemref')].map(r=>r.getAttribute('idref'));
+    const ncxTitlesLib = await buildNcxTitleMap(zip, opfDoc, opfDir);
     const loadedChapters=[];
+    let lastTitleLib = '';
     for (const id of spineIds) {
       const href=manifest[id]; if(!href) continue;
       const entry=zip.file(opfDir+href)||zip.file(href); if(!entry) continue;
@@ -2498,7 +2523,22 @@ async function loadEpubFromLibrary(file, titleOverride) {
       doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
       const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
       if(text.length<50) continue;
-      const title=(doc.querySelector('title')?.textContent||doc.querySelector('h1,h2,h3')?.textContent||`Part ${loadedChapters.length+1}`).trim().substring(0,70);
+      // Skip cover/TOC/copyright pages that just carry-forward wrong titles
+      const lowerText = text.toLowerCase().substring(0, 200);
+      const isJunkPage = (
+        (lowerText.includes('table of contents') && text.length < 500) ||
+        (lowerText.startsWith('cover') && text.length < 200) ||
+        (lowerText.includes('all rights reserved') && text.length < 300) ||
+        (lowerText.includes('copyright') && !lowerText.includes('chapter') && text.length < 400)
+      );
+      if (isJunkPage) continue;
+      const ncxT = ncxTitlesLib[href] || ncxTitlesLib[href.split('/').pop()];
+      const htmlT = doc.querySelector('h1,h2,h3')?.textContent?.trim();
+      const pageT = doc.querySelector('title')?.textContent?.trim();
+      let rawT = ncxT || htmlT || pageT || lastTitleLib || `Part ${loadedChapters.length+1}`;
+      rawT = rawT.replace(/^unknown$/i, lastTitleLib || `Part ${loadedChapters.length+1}`);
+      if (rawT && rawT.toLowerCase() !== 'unknown') lastTitleLib = rawT;
+      const title = rawT.substring(0,70);
       const words=text.split(/\s+/).length;
       const mins=Math.round(words/200);
       loadedChapters.push({title,html:doc.body.innerHTML,text,mins});
