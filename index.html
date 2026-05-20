@@ -178,7 +178,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 .gdrive-info strong{font-size:13px;color:var(--text);display:block;margin-bottom:2px}
 .gdrive-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;flex-shrink:0;white-space:nowrap}
 .gdrive-btn.connected{border-color:#7aab8a;color:#7aab8a}
-.drive-reconnect-bar{position:fixed;top:0;left:0;right:0;z-index:500;background:#e0a040;color:#13120f;font-size:13px;font-weight:500;padding:10px 16px;display:none;align-items:center;justify-content:space-between;gap:12px}
+.drive-reconnect-bar{position:fixed;top:48px;left:0;right:0;z-index:499;background:#e0a040;color:#13120f;font-size:12px;font-weight:500;padding:6px 12px;display:none;align-items:center;justify-content:space-between;gap:8px}
 .drive-reconnect-bar button{background:rgba(0,0,0,.2);border:none;border-radius:6px;color:#13120f;font-size:12px;padding:5px 12px;cursor:pointer;font-family:inherit;font-weight:600}
 .sync-toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 16px;font-size:12px;color:var(--muted);z-index:300;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
 .sync-toast.show{opacity:1}
@@ -206,6 +206,33 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
 /* ── CHAPTER DOWNLOAD progress ── */
 .dl-progress{height:3px;background:var(--border);border-radius:2px;margin-top:6px;overflow:hidden;display:none}
 .dl-progress-fill{height:100%;background:var(--accent);width:0%;transition:width .3s}
+
+/* ── SERIES GROUPING ── */
+.lib-view-tabs{display:flex;gap:0;padding:8px 16px 0;border-bottom:1px solid var(--border)}
+.lib-tab{flex:1;padding:8px 4px;text-align:center;font-size:13px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.lib-tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:500}
+.series-group{margin:0 0 8px;border-radius:10px;overflow:hidden;border:1px solid var(--border);margin:8px 12px}
+.series-header{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surface);cursor:pointer;user-select:none}
+.series-cover{width:40px;height:56px;border-radius:4px;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.series-cover img{width:100%;height:100%;object-fit:cover}
+.series-info{flex:1;min-width:0}
+.series-title{font-size:15px;font-weight:600;color:var(--text);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.series-meta{font-size:12px;color:var(--muted)}
+.series-chevron{color:var(--muted);font-size:12px;transition:transform .2s;flex-shrink:0}
+.series-books{display:none;border-top:1px solid var(--border)}
+.series-books.open{display:block}
+.series-book-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer}
+.series-book-row:last-child{border-bottom:none}
+.series-book-row:hover{background:var(--surface2)}
+.series-num{font-size:12px;color:var(--accent);min-width:28px;font-weight:500}
+.series-book-info{flex:1;min-width:0}
+.series-book-title{font-size:14px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.series-book-prog{font-size:11px;color:var(--muted);margin-top:2px}
+/* Edit metadata sheet */
+.meta-field{padding:12px 20px;border-bottom:1px solid var(--border)}
+.meta-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.meta-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;padding:8px 10px;font-family:inherit;outline:none}
+.meta-input:focus{border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -289,6 +316,23 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
   </div>
 </div>
 
+<!-- EDIT METADATA SHEET -->
+<div class="overlay" id="edit-meta-sheet">
+  <div class="overlay-bg" onclick="closeSheet('edit-meta-sheet')"></div>
+  <div class="sheet">
+    <div class="sheet-head"><span>Edit Book Info</span><button class="sheet-close" onclick="closeSheet('edit-meta-sheet')">×</button></div>
+    <div class="sheet-body" style="padding:0">
+      <div class="meta-field"><div class="meta-label">Title</div><input class="meta-input" id="meta-title" type="text"></div>
+      <div class="meta-field"><div class="meta-label">Author</div><input class="meta-input" id="meta-author" type="text"></div>
+      <div class="meta-field"><div class="meta-label">Series</div><input class="meta-input" id="meta-series" type="text" placeholder="Leave blank if standalone"></div>
+      <div class="meta-field" style="border:none"><div class="meta-label">Series Number</div><input class="meta-input" id="meta-seriesNum" type="number" step="0.5" placeholder="e.g. 1, 2.5, 0.5"></div>
+    </div>
+    <div style="padding:16px 20px">
+      <button class="btn" style="width:100%;justify-content:center" onclick="saveMetaEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- LIBRARY -->
 <div id="library-screen">
   <div class="lib-header">
@@ -296,6 +340,11 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
     <span id="drive-status-dot" style="font-size:11px;color:var(--muted);cursor:pointer" onclick="checkDriveStatus()" title="Drive sync status"></span>
     <button class="hbtn" onclick="document.getElementById('lib-file-input').click()">+ Add EPUB</button>
     <button class="hbtn" onclick="openSheet('lib-options-sheet')">⚙</button>
+  </div>
+  <div class="lib-view-tabs">
+    <div class="lib-tab active" id="tab-all" onclick="setLibView('all')">All Books</div>
+    <div class="lib-tab" id="tab-series" onclick="setLibView('series')">By Series</div>
+    <div class="lib-tab" id="tab-author" onclick="setLibView('author')">By Author</div>
   </div>
   <div class="lib-search"><input type="text" placeholder="🔍 Search books..." oninput="filterLibrary(this.value)" id="lib-search-input"></div>
   <div class="lib-scroll" id="lib-scroll">
@@ -969,13 +1018,22 @@ async function loadEpub(file) {
       if (idx2 >= 0) library[idx2].cover = coverUrl;
     }
 
+    // Parse metadata from filename
+    const meta = parseEpubFilename(file.name);
     // Save to epubCache and library
     epubCache[bookTitle] = { chapters };
     const existingIdx = library.findIndex(b => b.title === bookTitle);
     if (existingIdx >= 0) {
       library[existingIdx].totalChapters = chapters.length;
+      // Only update metadata if not manually edited
+      if (!library[existingIdx].metaEdited) {
+        if (!library[existingIdx].author) library[existingIdx].author = meta.author;
+        if (!library[existingIdx].series) library[existingIdx].series = meta.series;
+        if (library[existingIdx].seriesNum == null) library[existingIdx].seriesNum = meta.seriesNum;
+      }
     } else {
-      library.unshift({ title: bookTitle, totalChapters: chapters.length, chapter: 0, sentence: 0 });
+      library.unshift({ title: bookTitle, totalChapters: chapters.length, chapter: 0, sentence: 0,
+        author: meta.author, series: meta.series, seriesNum: meta.seriesNum });
     }
     saveLibrary();
     // Upload to Drive in background (don't await — don't block reading)
@@ -2034,6 +2092,9 @@ function searchInBook(query) {
     searchResults.length + ' result' + (searchResults.length !== 1 ? 's' : '') +
     (searchResults.length >= 200 ? ' (showing first 200)' : '');
 
+  // Sort by chapter index then sentence index
+  searchResults.sort((a, b) => a.chapterIdx !== b.chapterIdx ? a.chapterIdx - b.chapterIdx : a.sentenceIdx - b.sentenceIdx);
+
   // Render results
   el.innerHTML = '';
   if (!searchResults.length) return;
@@ -2227,6 +2288,178 @@ function importSaves(input) {
   };
   reader.readAsText(file);
   input.value = '';
+}
+
+
+// ── SERIES & METADATA ──
+let currentLibView = 'all'; // 'all' | 'series' | 'author'
+let editingMetaIdx = -1;
+
+function parseEpubFilename(raw) {
+  let name = raw.replace('.epub', '');
+  let series = '', seriesNum = null;
+
+  // Extract series from parentheses first
+  const parenMatch = name.match(/\(([^)]+)\)/);
+  if (parenMatch) {
+    const parenClean = parenMatch[1].replace(/__+/g, ' ').replace(/_/g, ' ').trim();
+    const nm = parenClean.match(/^(.+?)\s*,?\s*(?:Book\s+)?#?\s*([\d.]+)$/);
+    if (nm) { series = nm[1].trim(); seriesNum = parseFloat(nm[2]); }
+    name = name.substring(0, parenMatch.index).replace(/[_ ]+$/, '') + name.substring(parenMatch.index + parenMatch[0].length);
+  }
+
+  name = name.replace(/__+/g, ' -- ').replace(/_/g, ' ');
+  const parts = name.split(' -- ').map(p => p.trim().replace(/^-+ */, '').trim()).filter(Boolean);
+  if (!parts.length) return { title: raw, author: '', series, seriesNum };
+
+  const title = parts[0].replace(/\s+[0-9a-f]{8,}$/i, '').trim();
+
+  let author = '';
+  for (const part of parts.slice(1)) {
+    if (/^[0-9a-f]{8,}$/i.test(part)) continue;
+    if (/^\d{4}$/.test(part)) continue;
+    if (/archive/i.test(part)) continue;
+    if (/^[A-Za-z]/.test(part) && part.length > 2 && part.length < 60) {
+      if (part.includes(',')) {
+        const p = part.split(','); author = (p[1].trim() + ' ' + p[0].trim()).trim();
+      } else { author = part; }
+      break;
+    }
+  }
+
+  if (!series) {
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (/^[0-9a-f]{8,}$/i.test(part) || /^\d{4}$/.test(part) || /archive/i.test(part) || part === author) continue;
+      const m = part.match(/^(.+?)\s+#?([\d.]+)$/);
+      if (m && m[1].length > 1 && m[1].length < 40 && !/^\d/.test(m[1])) {
+        series = m[1].trim().replace(/^-+ */, '').trim(); seriesNum = parseFloat(m[2]); break;
+      }
+      if (/^[\d.]+$/.test(part) && i > 0) {
+        const prev = parts[i-1];
+        if (prev && prev !== author && !/^\d{4}$/.test(prev) && !/archive/i.test(prev) && prev.length < 40) {
+          series = prev.replace(/^-+ */, '').trim(); seriesNum = parseFloat(part); break;
+        }
+      }
+    }
+  }
+
+  return { title, author, series, seriesNum };
+}
+
+function setLibView(view) {
+  currentLibView = view;
+  ['all','series','author'].forEach(v => {
+    document.getElementById('tab-'+v)?.classList.toggle('active', v === view);
+  });
+  renderLibrary();
+}
+
+function renderLibraryGrouped(groupBy) {
+  const scroll = document.getElementById('lib-scroll');
+  scroll.innerHTML = '';
+
+  // Group books
+  const groups = {};
+  library.forEach((book, idx) => {
+    const key = groupBy === 'series'
+      ? (book.series || '— No Series —')
+      : (book.author || '— Unknown Author —');
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ book, idx });
+  });
+
+  // Sort group keys
+  const sortedKeys = Object.keys(groups).sort((a, b) => {
+    if (a.startsWith('—')) return 1;
+    if (b.startsWith('—')) return -1;
+    return a.localeCompare(b);
+  });
+
+  sortedKeys.forEach(key => {
+    const items = groups[key];
+    // Sort within group by series number then upload order
+    if (groupBy === 'series') {
+      items.sort((a, b) => {
+        const na = a.book.seriesNum ?? 9999;
+        const nb = b.book.seriesNum ?? 9999;
+        return na !== nb ? na - nb : a.idx - b.idx;
+      });
+    }
+
+    const groupEl = document.createElement('div');
+    groupEl.className = 'series-group';
+
+    // Cover from first book in group
+    const firstBook = items[0].book;
+    const coverHtml = firstBook.cover
+      ? `<img src="${firstBook.cover}" alt="">`
+      : `<span>📚</span>`;
+
+    const pct = items.reduce((s, {book}) => {
+      const total = book.totalChapters || 1;
+      return s + Math.round(((book.chapter||0) / total) * 100);
+    }, 0) / items.length;
+
+    groupEl.innerHTML = `
+      <div class="series-header" onclick="toggleSeriesGroup(this)">
+        <div class="series-cover">${coverHtml}</div>
+        <div class="series-info">
+          <div class="series-title">${escHtml(key)}</div>
+          <div class="series-meta">${items.length} book${items.length>1?'s':''} · ${Math.round(pct)}% read</div>
+        </div>
+        <span class="series-chevron">▶</span>
+      </div>
+      <div class="series-books">
+        ${items.map(({book, idx}) => {
+          const p = Math.round(((book.chapter||0) / (book.totalChapters||1)) * 100);
+          const numLabel = groupBy === 'series' && book.seriesNum != null ? `#${book.seriesNum}` : '';
+          return `<div class="series-book-row" onclick="openBookFromLibrary(${idx})" oncontextmenu="openMetaEdit(event,${idx})">
+            <span class="series-num">${escHtml(numLabel)}</span>
+            <div class="series-book-info">
+              <div class="series-book-title">${escHtml(book.title)}</div>
+              <div class="series-book-prog">${p}% complete</div>
+            </div>
+            <button class="book-del" onclick="deleteBook(event,${idx})" style="flex-shrink:0">×</button>
+          </div>`;
+        }).join('')}
+      </div>
+    `;
+    scroll.appendChild(groupEl);
+  });
+}
+
+function toggleSeriesGroup(header) {
+  const books = header.nextElementSibling;
+  const chevron = header.querySelector('.series-chevron');
+  books.classList.toggle('open');
+  chevron.textContent = books.classList.contains('open') ? '▼' : '▶';
+}
+
+function openMetaEdit(e, idx) {
+  e.preventDefault();
+  editingMetaIdx = idx;
+  const book = library[idx];
+  document.getElementById('meta-title').value = book.title || '';
+  document.getElementById('meta-author').value = book.author || '';
+  document.getElementById('meta-series').value = book.series || '';
+  document.getElementById('meta-seriesNum').value = book.seriesNum != null ? book.seriesNum : '';
+  openSheet('edit-meta-sheet');
+}
+
+function saveMetaEdit() {
+  if (editingMetaIdx < 0) return;
+  const book = library[editingMetaIdx];
+  book.title = document.getElementById('meta-title').value.trim() || book.title;
+  book.author = document.getElementById('meta-author').value.trim();
+  book.series = document.getElementById('meta-series').value.trim();
+  const numVal = document.getElementById('meta-seriesNum').value;
+  book.seriesNum = numVal !== '' ? parseFloat(numVal) : null;
+  book.metaEdited = true; // prevent auto-overwrite on re-upload
+  saveLibrary();
+  closeSheet('edit-meta-sheet');
+  renderLibrary();
+  showToast('✓ Book info saved');
 }
 
 function showLoading(on){document.getElementById('loading-bar').style.display=on?'block':'none';}
@@ -2447,6 +2680,8 @@ function renderLibrary() {
       <button class="book-del" onclick="deleteBook(event,${idx})">×</button>
     `;
     card.onclick = () => openBookFromLibrary(idx);
+    card.oncontextmenu = (e) => openMetaEdit(e, idx);
+    card.addEventListener('touchstart', (() => { let t; return () => { t = setTimeout(() => openMetaEdit(new Event('x'), idx), 600); card.addEventListener('touchend', () => clearTimeout(t), {once:true}); }; })());
     scroll.appendChild(card);
   });
 }
@@ -3050,4 +3285,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.5.5 | built 2026-05-21 00:10 -->
+<!-- Bookvoice v2.6.2 | built 2026-05-21 01:15 -->
