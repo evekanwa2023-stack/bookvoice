@@ -898,6 +898,7 @@ async function loadEpub(file) {
     const { titleMap: ncxTitles, anchorMap: ncxAnchors } = await buildNcxTitleMap(zip, opfDoc, opfDir);
     chapters=[];
     let lastKnownTitle = '';
+    let pendingTitles = [];
     for (const id of spineIds) {
       const href=manifest[id]; if(!href) continue;
       const entry=zip.file(opfDir+href)||zip.file(href); if(!entry) continue;
@@ -905,21 +906,30 @@ async function loadEpub(file) {
       const doc=new DOMParser().parseFromString(html,'text/html');
       doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
       const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
-      if(text.length<50) continue;
+      if(text.length<10) continue;
+      const ncxTitleCheck = ncxTitles[href] || ncxTitles[href.split('/').pop()];
       const lowerText = text.toLowerCase().substring(0, 400);
-      const isJunkPage = (
-        (lowerText.includes('table of contents') && text.length < 1500) ||
-        (lowerText.startsWith('cover') && text.length < 200) ||
-        (lowerText.includes('all rights reserved') && text.length < 300) ||
-        (lowerText.includes('copyright') && !lowerText.includes('chapter') && text.length < 400)
+      // Only skip if NO NCX title AND looks like junk
+      const isJunkPage = !ncxTitleCheck && (
+        (lowerText.includes('table of contents')) ||
+        (lowerText.replace(/\s/g,'').length < 30) ||
+        (lowerText.startsWith('cover') && !lowerText.includes('chapter'))
       );
       if (isJunkPage) continue;
 
       const words=text.split(/\s+/).length;
       const mins=Math.round(words/200);
 
+      // If this file has NCX entries but tiny content, queue titles for next files
+      const ncxEntries = ncxAnchors[href] || ncxAnchors[href.split('/').pop()];
+      if (ncxEntries && ncxEntries.length > 0 && text.length < 50) {
+        // Queue all titles in order
+        ncxEntries.forEach(e => pendingTitles.push(e.title));
+        continue;
+      }
+
       // Check if this file has multiple chapters via anchor splitting
-      const anchors = ncxAnchors[href] || ncxAnchors[href.split('/').pop()];
+      const anchors = ncxEntries;
       if (anchors && anchors.length > 1) {
         const sections = splitHtmlByAnchors(html, anchors);
         if (sections && sections.length > 1) {
@@ -939,10 +949,13 @@ async function loadEpub(file) {
       let textTitle = null;
       const textMatch = text.match(/^(?:[A-Z][^.!?\n]{0,30}\s+)?(Chapter\s+\d+|Prologue|Epilogue|Part\s+\d+|Introduction|Preface)/i);
       if (textMatch) textTitle = (textMatch[1] || textMatch[0]).trim();
-      let rawTitle = ncxTitle || htmlTitle || textTitle || lastKnownTitle || `Part ${chapters.length+1}`;
+      // If page is the TOC page, title it "Table of Contents"
+      const isTocPage = !ncxTitle && text.toLowerCase().includes('table of contents') && text.length < 2000;
+      const nextPending = pendingTitles.length > 0 ? pendingTitles.shift() : null;
+      let rawTitle = (isTocPage ? 'Table of Contents' : null) || ncxTitle || htmlTitle || textTitle || nextPending || lastKnownTitle || `Part ${chapters.length+1}`;
       rawTitle = rawTitle.replace(/^unknown$/i, lastKnownTitle || `Part ${chapters.length+1}`);
       const isRealTitle = rawTitle && rawTitle.toLowerCase() !== 'unknown' && rawTitle.toLowerCase() !== 'cover';
-      if (isRealTitle) lastKnownTitle = rawTitle;
+      if (isRealTitle) { lastKnownTitle = rawTitle; }
       if (!isRealTitle && !lastKnownTitle) rawTitle = `Part ${chapters.length+1}`;
       const title = rawTitle.substring(0,70);
       chapters.push({title,html:doc.body.innerHTML,text,mins});
@@ -2515,14 +2528,13 @@ async function openBookFromLibrary(idx) {
             const doc=new DOMParser().parseFromString(html,'text/html');
             doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
             const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
-            if(text.length<50) continue;
-      // Skip cover/TOC/copyright pages that just carry-forward wrong titles
+            if(text.length<10) continue;
+            const ncxTitleCheck2 = ncxTitles2[href] || ncxTitles2[href.split('/').pop()];
       const lowerText = text.toLowerCase().substring(0, 400);
-      const isJunkPage = (
-        (lowerText.includes('table of contents') && text.length < 1500) ||
-        (lowerText.startsWith('cover') && text.length < 200) ||
-        (lowerText.includes('all rights reserved') && text.length < 300) ||
-        (lowerText.includes('copyright') && !lowerText.includes('chapter') && text.length < 400)
+      const isJunkPage = !ncxTitleCheck2 && (
+        (lowerText.includes('table of contents')) ||
+        (lowerText.replace(/\s/g,'').length < 30) ||
+        (lowerText.startsWith('cover') && !lowerText.includes('chapter'))
       );
       if (isJunkPage) continue;
             // Anchor splitting
@@ -2638,14 +2650,13 @@ async function loadEpubFromLibrary(file, titleOverride) {
       const doc=new DOMParser().parseFromString(html,'text/html');
       doc.querySelectorAll('script,style,nav').forEach(el=>el.remove());
       const text=(doc.body?.innerText||doc.body?.textContent||'').trim();
-      if(text.length<50) continue;
-      // Skip cover/TOC/copyright pages that just carry-forward wrong titles
+      if(text.length<10) continue;
+      const ncxTitleCheckLib = ncxTitlesLib[href] || ncxTitlesLib[href.split('/').pop()];
       const lowerText = text.toLowerCase().substring(0, 400);
-      const isJunkPage = (
-        (lowerText.includes('table of contents') && text.length < 1500) ||
-        (lowerText.startsWith('cover') && text.length < 200) ||
-        (lowerText.includes('all rights reserved') && text.length < 300) ||
-        (lowerText.includes('copyright') && !lowerText.includes('chapter') && text.length < 400)
+      const isJunkPage = !ncxTitleCheckLib && (
+        (lowerText.includes('table of contents')) ||
+        (lowerText.replace(/\s/g,'').length < 30) ||
+        (lowerText.startsWith('cover') && !lowerText.includes('chapter'))
       );
       if (isJunkPage) continue;
       // Anchor splitting
@@ -3034,4 +3045,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.5.3 | built 2026-05-20 23:10 -->
+<!-- Bookvoice v2.5.4 | built 2026-05-20 23:55 -->
