@@ -3173,18 +3173,22 @@ async function gdriveLoadSaves() {
 }
 
 async function gdriveSavePosition() {
-  if (!gdriveEnabled || !isTokenValid() || !bookTitle) return;
+  if (!gdriveEnabled || !isTokenValid()) return;
+  // Strip covers from library before saving (too large for Drive JSON)
+  const libraryForDrive = library.map(b => {
+    const {cover, ...rest} = b;
+    return rest;
+  });
   const saves = {
     book: bookTitle,
-    // current position (where you are right now)
     chapter: currentChapter,
     sentence: sentenceIndex,
-    // furthest position ever reached
     furthestChapter,
     furthestSentence,
     speed: speed,
     fontSize: fontSize,
     serverUrl: serverUrl,
+    library: libraryForDrive,
     ts: Date.now()
   };
   try {
@@ -3221,7 +3225,6 @@ async function gdriveRestoreOnLoad() {
   if (!gdriveEnabled || !isTokenValid()) return;
   const saves = await gdriveLoadSaves();
   if (!saves) return;
-  // Restore server URL if different
   if (saves.serverUrl && saves.serverUrl !== serverUrl) {
     serverUrl = saves.serverUrl;
     localStorage.setItem('tts_server', serverUrl);
@@ -3229,8 +3232,23 @@ async function gdriveRestoreOnLoad() {
   }
   if (saves.speed) { speed = saves.speed; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
   if (saves.fontSize) { fontSize = saves.fontSize; applyFontSize(fontSize); localStorage.setItem('tts_fs', fontSize); }
-  // Show resume banner with Drive data
-  // Always restore to FURTHEST point reached, not current (in case user was rereading)
+  // Restore library if this device has none
+  if (saves.library && saves.library.length > 0 && library.length === 0) {
+    library = saves.library;
+    saveLibrary();
+    renderLibrary();
+    showToast('☁️ Library restored from Drive (' + library.length + ' books)');
+  } else if (saves.library && saves.library.length > 0) {
+    // Merge — add books from Drive that aren't in local library
+    let added = 0;
+    saves.library.forEach(driveBook => {
+      if (!library.find(b => b.title === driveBook.title)) {
+        library.push(driveBook);
+        added++;
+      }
+    });
+    if (added > 0) { saveLibrary(); renderLibrary(); showToast('☁️ Added ' + added + ' book(s) from Drive'); }
+  }
   if (saves.book) {
     const ago = Math.round((Date.now()-saves.ts)/60000);
     const agoStr = ago < 60 ? ago+'m ago' : Math.round(ago/60)+'h ago';
@@ -3289,4 +3307,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.6.4 | built 2026-06-02 23:25 -->
+<!-- Bookvoice v2.6.5 | built 2026-06-02 23:40 -->
