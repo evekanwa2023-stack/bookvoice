@@ -268,6 +268,10 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
           <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">Export saves to iCloud Drive. Import to restore on any device.</p>
         </div>
         <button onclick="closeSheet('lib-options-sheet');showSetup()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">🔌 Change Server URL</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)">
+          <span style="font-size:14px;color:var(--text)">☁️ Google Drive</span>
+          <button class="gdrive-btn" id="gdrive-btn2" onclick="toggleGDrive()">Connect</button>
+        </div>
         <button onclick="closeSheet('lib-options-sheet');clearDriveCache()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:#e07070;font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">☁️ Clear Drive Cache</button>
         <button onclick="closeSheet('lib-options-sheet');clearAllData()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:#e07070;font-size:14px;font-family:inherit;cursor:pointer">🗑 Reset All Data</button>
       </div>
@@ -3113,20 +3117,17 @@ function doSignIn(resolve) {
 
 function updateGDriveUI() {
   const btn = document.getElementById('gdrive-btn');
+  const btn2 = document.getElementById('gdrive-btn2');
   const label = document.getElementById('gdrive-label');
   const sub = document.getElementById('gdrive-sublabel');
-  if (!btn) return;
-  if (gdriveEnabled && isTokenValid()) {
-    btn.textContent = 'Connected ✓';
-    btn.className = 'gdrive-btn connected';
-    label.textContent = 'Google Drive Sync';
-    sub.textContent = 'Position saved automatically';
-  } else {
-    btn.textContent = 'Connect';
-    btn.className = 'gdrive-btn';
-    label.textContent = 'Google Drive Sync';
-    sub.textContent = 'Save position & settings across devices';
-  }
+  const connected = gdriveEnabled && isTokenValid();
+  [btn, btn2].forEach(b => {
+    if (!b) return;
+    b.textContent = connected ? 'Connected ✓' : 'Connect';
+    b.className = connected ? 'gdrive-btn connected' : 'gdrive-btn';
+  });
+  if (label) label.textContent = 'Google Drive Sync';
+  if (sub) sub.textContent = connected ? 'Position saved automatically' : 'Save position & settings across devices';
 }
 
 async function gdriveRequest(method, url, body) {
@@ -3288,4 +3289,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.6.3 | built 2026-05-21 02:00 -->
+<!-- Bookvoice v2.6.4 | built 2026-06-02 23:25 -->
