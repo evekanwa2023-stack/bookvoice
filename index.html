@@ -140,6 +140,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 .dl-all-wrap{padding:14px 20px;border-bottom:1px solid var(--border)}
 
 @media(max-width:540px){.sidebar{display:none}.reader-body{font-size:var(--fs)}}
+@media(min-width:768px) and (orientation:landscape){.reader-body{max-width:min(820px,90%)}}
+@media(min-width:1024px){.reader-body{max-width:min(860px,88%)}}
 /* Auto-hide player */
 .player{transition:transform .3s ease, opacity .3s ease}
 .player.hidden-player{transform:translateY(100%);opacity:0;pointer-events:none;position:absolute;bottom:0;left:0;right:0}
@@ -3307,4 +3309,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.6.5 | built 2026-06-02 23:40 -->
+<!-- Bookvoice v2.6.6 | built 2026-06-02 23:45 -->
