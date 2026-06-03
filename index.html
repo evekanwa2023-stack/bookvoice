@@ -1159,7 +1159,7 @@ function loadChapter(i) {
   document.getElementById('now-ch').textContent=chapters[i].title;
   const pct=chapters.length>1?(i/(chapters.length-1))*100:0;
   document.getElementById('prog-fill').style.width=pct+'%';
-  document.getElementById('prog-time').textContent=(i+1)+' / '+chapters.length;
+  document.getElementById('prog-time').textContent='Ch '+(i+1)+' / '+chapters.length;
   wrapSentences(body);
   updateMSChapter();
   updateSentCounter();
@@ -1249,7 +1249,7 @@ function clearBuffer() {
 
 function updateSentCounter() {
   const el = document.getElementById('sent-counter');
-  if (el && sentences.length) el.textContent = (sentenceIndex+1) + ' / ' + sentences.length;
+  if (el && sentences.length) el.textContent = 'Sentence ' + (sentenceIndex+1) + ' / ' + sentences.length;
 }
 
 // ── PRONUNCIATION / FIND & REPLACE ──
@@ -3309,4 +3309,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.6.6 | built 2026-06-02 23:45 -->
+<!-- Bookvoice v2.6.7 | built 2026-06-03 22:10 -->
