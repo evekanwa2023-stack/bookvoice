@@ -1291,36 +1291,38 @@ async function loadChapterTranslated(chIdx, body) {
 
   // Status in now-label
   const indicator = document.getElementById('lang-indicator');
+  if (indicator) indicator.textContent = `🌐 0/${total}`;
 
-  let done = 0;
-  for (let b = 0; b < blocks.length; b++) {
-    // Stop if user navigated away to a different chapter
+  const BATCH = 20;
+  const tgt = {'th':'th','en':'en','zh':'zh-CN','zh-en':'en','zh-th':'th','zh-en-th':'th'}[langMode] || 'th';
+  for (let i = 0; i < blocks.length; i += BATCH) {
     if (currentChapter !== chIdx) return;
-    const block = blocks[b];
-    if (!block.orig) { done++; continue; }
+    const chunk = blocks.slice(i, Math.min(i + BATCH, blocks.length));
+    const origs = chunk.map(b => b.orig || ' ');
     try {
-      block.translated = await applyLangMode(block.orig);
-    } catch(e) {
-      block.translated = block.orig;
+      const translated = await translateBatch(origs, tgt);
+      chunk.forEach((b, j) => { b.translated = translated[j] || b.orig; });
+    } catch(e) { chunk.forEach(b => { b.translated = b.orig; }); }
+    if (langMode === 'zh-en-th') {
+      try {
+        const thResults = await translateBatch(chunk.map(b => b.translated || b.orig || ' '), 'th');
+        chunk.forEach((b, j) => { b.translated = thResults[j] || b.translated; });
+      } catch(e) {}
     }
-    done++;
-    // Append this block to body immediately
-    // Remove progress bar on first paragraph, then append
-    if (done === 1) {
+    const done = Math.min(i + BATCH, blocks.length);
+    if (i === 0) {
       const prog = document.getElementById('ch-translate-progress');
       if (prog) prog.remove();
+      body.innerHTML = '';
     }
-    const el = document.createElement(block.tag || 'p');
-    el.textContent = block.translated;
-    body.appendChild(el);
-    // Update progress in bar and indicator
-    const bar = document.getElementById('ch-tr-bar');
-    const lbl = document.getElementById('ch-tr-done');
-    if (bar) bar.style.width = Math.round((done / total) * 100) + '%';
-    if (lbl) lbl.textContent = done;
+    for (const block of chunk) {
+      if (!block.orig) continue;
+      const el = document.createElement(block.tag || 'p');
+      el.textContent = block.translated || block.orig;
+      body.appendChild(el);
+    }
     if (indicator) indicator.textContent = `🌐 ${done}/${total}`;
-    // Small delay every 5 paragraphs to avoid rate limiting
-    if (done % 5 === 0) await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 100));
   }
 
   // Final re-wrap once ALL blocks are translated
@@ -1496,9 +1498,10 @@ async function startPreTranslate() {
   document.getElementById('pt-title').textContent = 'Translating...';
 
   const total = chapters.length;
+  const tgt = {'th':'th','en':'en','zh':'zh-CN','zh-en':'en','zh-th':'th','zh-en-th':'th'}[langMode] || 'th';
+
   for (let ci = 0; ci < total; ci++) {
     const cacheKey = langMode + ':' + ci;
-    // Update chapter progress
     document.getElementById('pt-progress-bar').style.width = Math.round((ci / total) * 100) + '%';
     document.getElementById('pt-progress-label').textContent = `Chapter ${ci + 1} / ${total}`;
 
@@ -1516,12 +1519,22 @@ async function startPreTranslate() {
     const blocks = blockEls.map(el => ({ orig: (el.innerText || el.textContent || '').trim(), tag: el.tagName.toLowerCase(), translated: null }));
     chapterTranslated[cacheKey] = blocks;
 
-    for (let b = 0; b < blocks.length; b++) {
-      const block = blocks[b];
-      if (!block.orig) continue;
-      try { block.translated = await applyLangMode(block.orig); }
-      catch(e) { block.translated = block.orig; }
-      if (b % 5 === 0) await new Promise(r => setTimeout(r, 150));
+    // Translate in batches of 20
+    const BATCH = 20;
+    for (let i = 0; i < blocks.length; i += BATCH) {
+      const chunk = blocks.slice(i, Math.min(i + BATCH, blocks.length));
+      const origs = chunk.map(b => b.orig || ' ');
+      try {
+        const translated = await translateBatch(origs, tgt);
+        chunk.forEach((b, j) => { b.translated = translated[j] || b.orig; });
+      } catch(e) { chunk.forEach(b => { b.translated = b.orig; }); }
+      if (langMode === 'zh-en-th') {
+        try {
+          const thResults = await translateBatch(chunk.map(b => b.translated || b.orig || ' '), 'th');
+          chunk.forEach((b, j) => { b.translated = thResults[j] || b.translated; });
+        } catch(e) {}
+      }
+      await new Promise(r => setTimeout(r, 100));
     }
   }
 
@@ -1833,6 +1846,25 @@ async function translateStep(text, target) {
   }
 }
 
+// Translate many texts in one request — much faster than one-by-one
+async function translateBatch(texts, target) {
+  try {
+    const r = await fetch(`${serverUrl}/translate_batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texts, target }),
+      signal: AbortSignal.timeout(30000)
+    });
+    if (!r.ok) throw new Error('batch translate failed');
+    const data = await r.json();
+    return data.translated || texts;
+  } catch(e) {
+    console.warn('Batch translate failed, falling back:', e);
+    // Fallback to one-by-one
+    return Promise.all(texts.map(t => translateStep(t, target)));
+  }
+}
+
 async function applyLangMode(text) {
   if (langMode === 'orig') return text;
   const cacheKey = langMode + ':' + text;
@@ -1842,8 +1874,7 @@ async function applyLangMode(text) {
   else if (langMode === 'th')  result = await translateStep(text, 'th');
   else if (langMode === 'zh')  result = await translateStep(text, 'zh-CN');
   else if (langMode === 'zh-en') {
-    const en = await translateStep(text, 'en');
-    result = en;
+    result = await translateStep(text, 'en');
   } else if (langMode === 'zh-th') {
     result = await translateStep(text, 'th');
   } else if (langMode === 'zh-en-th') {
@@ -1852,6 +1883,39 @@ async function applyLangMode(text) {
   }
   translateCache[cacheKey] = result;
   return result;
+}
+
+// Translate a whole array of blocks in batches of N
+async function translateBlocksBatch(blocks, BATCH = 20) {
+  const target = {'th':'th','en':'en','zh':'zh-CN','zh-en':'en','zh-th':'th','zh-en-th':'th'}[langMode] || 'th';
+  const needsSecondPass = langMode === 'zh-en-th';
+
+  // Split into chunks of BATCH
+  for (let i = 0; i < blocks.length; i += BATCH) {
+    const chunk = blocks.slice(i, i + BATCH);
+    const origs = chunk.map(b => b.orig || ' ');
+    const translated = await translateBatch(origs, target);
+    for (let j = 0; j < chunk.length; j++) {
+      chunk[j].translated = translated[j] || chunk[j].orig;
+      // Cache each result
+      if (chunk[j].orig) translateCache[langMode + ':' + chunk[j].orig] = chunk[j].translated;
+    }
+    // Small pause between batches
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  // Second pass for zh-en-th: translate EN results to TH
+  if (needsSecondPass) {
+    for (let i = 0; i < blocks.length; i += BATCH) {
+      const chunk = blocks.slice(i, i + BATCH);
+      const enTexts = chunk.map(b => b.translated || b.orig || ' ');
+      const thResults = await translateBatch(enTexts, 'th');
+      for (let j = 0; j < chunk.length; j++) {
+        chunk[j].translated = thResults[j] || chunk[j].translated;
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
 }
 
 async function fetchAudioBlob(text) {
@@ -3789,4 +3853,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.8.4 | built 2026-06-04 20:45 -->
+<!-- Bookvoice v2.8.5 | built 2026-06-04 21:30 -->
