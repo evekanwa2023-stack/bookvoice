@@ -1103,7 +1103,7 @@ async function loadEpub(file) {
     // Parse metadata from filename
     const meta = parseEpubFilename(file.name);
     // Save to epubCache and library
-    epubCache[bookTitle] = { chapters, epubFile: file };
+    epubCache[bookTitle] = { chapters, epubZip: zip };
     const existingIdx = library.findIndex(b => b.title === bookTitle);
     if (existingIdx >= 0) {
       library[existingIdx].totalChapters = chapters.length;
@@ -1380,29 +1380,29 @@ async function startBgTranslate(fromChIdx) {
 // ── EXPORT TRANSLATED EPUB ──
 async function exportTranslatedEpub() {
   const cached = epubCache[bookTitle];
-  if (!cached || !cached.epubFile) {
-    showToast('Re-open the book file to enable export'); return;
+  if (!cached || !cached.epubZip) {
+    showToast('Please re-open the book file to enable export'); return;
   }
   if (langMode === 'orig') {
     showToast('Select a translation language first'); return;
   }
 
-  // Check how many chapters are translated
   const translatedCount = chapters.filter((_, ci) => {
     const key = langMode + ':' + ci;
     return chapterTranslated[key] && chapterTranslated[key].every(b => b.translated !== null || !b.orig);
   }).length;
 
   if (translatedCount === 0) {
-    showToast('No chapters translated yet — read some chapters first'); return;
+    showToast('No chapters translated yet — read or pre-translate first'); return;
   }
 
   showToast(`Building EPUB... (${translatedCount}/${chapters.length} chapters translated)`);
 
   try {
-    const zip = await JSZip.loadAsync(cached.epubFile);
+    // Clone the zip so we don't mutate the cached one
+    const zipData = await cached.epubZip.generateAsync({ type: 'arraybuffer' });
+    const zip = await JSZip.loadAsync(zipData);
 
-    // Parse OPF to get spine file paths
     const cxml = await zip.file('META-INF/container.xml').async('text');
     const cdoc = new DOMParser().parseFromString(cxml, 'application/xml');
     const opfPath = cdoc.querySelector('rootfile').getAttribute('full-path');
@@ -1416,7 +1416,6 @@ async function exportTranslatedEpub() {
     const spineIds = [...opfDoc.querySelectorAll('spine itemref')].map(r => r.getAttribute('idref'));
     const spineFiles = spineIds.map(id => opfDir + manifest[id]).filter(Boolean);
 
-    // Replace text in each spine file with translated content
     let chIdx = 0;
     for (const filePath of spineFiles) {
       const fileObj = zip.file(filePath) || zip.file(decodeURIComponent(filePath));
@@ -1425,14 +1424,13 @@ async function exportTranslatedEpub() {
       const cacheKey = langMode + ':' + chIdx;
       const translatedBlocks = chapterTranslated[cacheKey];
       if (!translatedBlocks || !translatedBlocks.every(b => b.translated !== null || !b.orig)) {
-        chIdx++; continue; // keep original for untranslated chapters
+        chIdx++; continue;
       }
 
       const html = await fileObj.async('text');
       const doc = new DOMParser().parseFromString(html, 'text/html');
       const blockEls = [...doc.querySelectorAll('p,li,h1,h2,h3,h4,blockquote')];
 
-      // Match translated blocks to DOM elements by index
       let bi = 0;
       for (const el of blockEls) {
         const orig = (el.innerText || el.textContent || '').trim();
@@ -1443,12 +1441,10 @@ async function exportTranslatedEpub() {
         bi++;
       }
 
-      const newHtml = '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
-      zip.file(filePath, newHtml);
+      zip.file(filePath, '<!DOCTYPE html>\n' + doc.documentElement.outerHTML);
       chIdx++;
     }
 
-    // Generate and download
     const langSuffix = {'th':'TH','en':'EN','zh':'ZH','zh-en':'EN','zh-th':'TH','zh-en-th':'TH'}[langMode] || langMode;
     const filename = bookTitle.replace(/[^a-zA-Z0-9\-_]/g, '_').substring(0, 60) + '_' + langSuffix + '.epub';
     const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/epub+zip', compression: 'DEFLATE' });
@@ -3363,7 +3359,7 @@ async function openBookFromLibrary(idx) {
           if (loadedChapters.length) {
             chapters = loadedChapters;
             bookTitle = book.title;
-            epubCache[bookTitle] = { chapters };
+            epubCache[bookTitle] = { chapters, epubZip: zip };
             // Update library entry driveFileId
             const libIdx = library.findIndex(b => b.title === bookTitle);
             if (libIdx >= 0 && !library[libIdx].driveFileId) {
@@ -3484,7 +3480,7 @@ async function loadEpubFromLibrary(file, titleOverride) {
 
     const title = titleOverride || cleanBookTitle(file.name.replace('.epub',''));
     // Cache in memory
-    epubCache[title] = { chapters: loadedChapters };
+    epubCache[title] = { chapters: loadedChapters, epubZip: zip };
     // Upload to Drive in background if not already there
     if (gdriveEnabled && isTokenValid()) driveUploadEpub(file, title);
 
@@ -3853,4 +3849,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.8.5 | built 2026-06-04 21:30 -->
+<!-- Bookvoice v2.8.6 | built 2026-06-04 22:00 -->
