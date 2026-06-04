@@ -583,6 +583,7 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
         <button onclick="closeSheet('more-sheet');openSheet('sleep-sheet')" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)"><span>⏱ Sleep Timer</span><span class="sleep-badge" id="sleep-badge"></span></button>
         <button onclick="showServerStatus()" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)"><span>🔌 Server Status</span><span id="server-status-badge" style="font-size:12px;color:var(--muted)">Tap to check</span></button>
         <button onclick="closeSheet('more-sheet');openSheet('dl-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">⬇ Download Audio</button>
+        <button onclick="closeSheet('more-sheet');exportTranslatedEpub()" id="export-epub-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">📥 Export Translated EPUB</button>
         <button onclick="closeSheet('more-sheet');openSheet('theme-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">🎨 Theme</button>
         <button onclick="closeSheet('more-sheet');openSheet('stats-sheet');renderStats()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">📊 Reading Stats</button>
         <button onclick="closeSheet('more-sheet');openSheet('settings-sheet')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer">⚙ Settings</button>
@@ -1102,7 +1103,7 @@ async function loadEpub(file) {
     // Parse metadata from filename
     const meta = parseEpubFilename(file.name);
     // Save to epubCache and library
-    epubCache[bookTitle] = { chapters };
+    epubCache[bookTitle] = { chapters, epubFile: file };
     const existingIdx = library.findIndex(b => b.title === bookTitle);
     if (existingIdx >= 0) {
       library[existingIdx].totalChapters = chapters.length;
@@ -1124,6 +1125,9 @@ async function loadEpub(file) {
     document.getElementById('drop-zone').classList.add('hidden');
     document.getElementById('reader-scroll').classList.remove('hidden');
     document.getElementById('player').classList.remove('hidden');
+    document.getElementById('library-screen').style.display='none';
+    document.getElementById('setup-screen').style.display='none';
+    document.getElementById('app').style.display='flex';
     buildSidebar(); buildDownloadList(); setupMediaSession();
     if (pendingResume && pendingResume.book===bookTitle) {
       loadChapter(pendingResume.chapter);
@@ -1257,6 +1261,10 @@ async function loadChapterTranslated(chIdx, body) {
   // Already fully translated — render instantly
   if (chapterTranslated[cacheKey] && chapterTranslated[cacheKey].every(b => b.translated !== null || !b.orig)) {
     renderTranslatedBlocks(chapterTranslated[cacheKey], body);
+    clearHighlight();
+    wrapSentences(body);
+    updateMSChapter();
+    updateSentCounter();
     return;
   }
 
@@ -1317,8 +1325,9 @@ async function loadChapterTranslated(chIdx, body) {
 
   // Final re-wrap once ALL blocks are translated
   if (currentChapter === chIdx) {
+    const freshBody = document.getElementById('reader-body');
     clearHighlight();
-    wrapSentences(body);
+    wrapSentences(freshBody);
     updateMSChapter();
     updateSentCounter();
     if (indicator) indicator.textContent = '🌐 ' + (LANG_LABELS[langMode] || langMode.toUpperCase());
@@ -1366,6 +1375,94 @@ async function startBgTranslate(fromChIdx) {
     }
   }
 }
+// ── EXPORT TRANSLATED EPUB ──
+async function exportTranslatedEpub() {
+  const cached = epubCache[bookTitle];
+  if (!cached || !cached.epubFile) {
+    showToast('Re-open the book file to enable export'); return;
+  }
+  if (langMode === 'orig') {
+    showToast('Select a translation language first'); return;
+  }
+
+  // Check how many chapters are translated
+  const translatedCount = chapters.filter((_, ci) => {
+    const key = langMode + ':' + ci;
+    return chapterTranslated[key] && chapterTranslated[key].every(b => b.translated !== null || !b.orig);
+  }).length;
+
+  if (translatedCount === 0) {
+    showToast('No chapters translated yet — read some chapters first'); return;
+  }
+
+  showToast(`Building EPUB... (${translatedCount}/${chapters.length} chapters translated)`);
+
+  try {
+    const zip = await JSZip.loadAsync(cached.epubFile);
+
+    // Parse OPF to get spine file paths
+    const cxml = await zip.file('META-INF/container.xml').async('text');
+    const cdoc = new DOMParser().parseFromString(cxml, 'application/xml');
+    const opfPath = cdoc.querySelector('rootfile').getAttribute('full-path');
+    const opfDir = opfPath.includes('/') ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1) : '';
+    const opfText = await zip.file(opfPath).async('text');
+    const opfDoc = new DOMParser().parseFromString(opfText, 'application/xml');
+    const manifest = {};
+    opfDoc.querySelectorAll('manifest item').forEach(item => {
+      manifest[item.getAttribute('id')] = item.getAttribute('href');
+    });
+    const spineIds = [...opfDoc.querySelectorAll('spine itemref')].map(r => r.getAttribute('idref'));
+    const spineFiles = spineIds.map(id => opfDir + manifest[id]).filter(Boolean);
+
+    // Replace text in each spine file with translated content
+    let chIdx = 0;
+    for (const filePath of spineFiles) {
+      const fileObj = zip.file(filePath) || zip.file(decodeURIComponent(filePath));
+      if (!fileObj) { chIdx++; continue; }
+
+      const cacheKey = langMode + ':' + chIdx;
+      const translatedBlocks = chapterTranslated[cacheKey];
+      if (!translatedBlocks || !translatedBlocks.every(b => b.translated !== null || !b.orig)) {
+        chIdx++; continue; // keep original for untranslated chapters
+      }
+
+      const html = await fileObj.async('text');
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const blockEls = [...doc.querySelectorAll('p,li,h1,h2,h3,h4,blockquote')];
+
+      // Match translated blocks to DOM elements by index
+      let bi = 0;
+      for (const el of blockEls) {
+        const orig = (el.innerText || el.textContent || '').trim();
+        if (!orig) continue;
+        if (bi < translatedBlocks.length && translatedBlocks[bi].translated) {
+          el.textContent = translatedBlocks[bi].translated;
+        }
+        bi++;
+      }
+
+      const newHtml = '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+      zip.file(filePath, newHtml);
+      chIdx++;
+    }
+
+    // Generate and download
+    const langSuffix = {'th':'TH','en':'EN','zh':'ZH','zh-en':'EN','zh-th':'TH','zh-en-th':'TH'}[langMode] || langMode;
+    const filename = bookTitle.replace(/[^a-zA-Z0-9\-_]/g, '_').substring(0, 60) + '_' + langSuffix + '.epub';
+    const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/epub+zip', compression: 'DEFLATE' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    showToast(`✓ Downloaded: ${filename}`);
+  } catch(e) {
+    showToast('Export failed: ' + e.message);
+    console.error('Export EPUB error:', e);
+  }
+}
+
 // ── PRE-TRANSLATE DIALOG ──
 let ptResolve = null; // resolves when user makes a choice
 
@@ -3691,4 +3788,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.8.1 | built 2026-06-04 19:30 -->
+<!-- Bookvoice v2.8.3 | built 2026-06-04 20:30 -->
