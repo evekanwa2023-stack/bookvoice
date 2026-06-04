@@ -1416,20 +1416,46 @@ async function exportTranslatedEpub() {
     const spineIds = [...opfDoc.querySelectorAll('spine itemref')].map(r => r.getAttribute('idref'));
     const spineFiles = spineIds.map(id => opfDir + manifest[id]).filter(Boolean);
 
+    // Build fingerprints from chapters[] to match spine files correctly
+    // (spine may have titlepage/toc files that shift the index)
+    const chFingerprints = chapters.map(ch => {
+      const t = (ch.text || ch.html.replace(/<[^>]+>/g,' ')).replace(/\s+/g,' ').trim();
+      return t.substring(0, 60).toLowerCase();
+    });
+
     let chIdx = 0;
     for (const filePath of spineFiles) {
       const fileObj = zip.file(filePath) || zip.file(decodeURIComponent(filePath));
-      if (!fileObj) { chIdx++; continue; }
+      if (!fileObj) continue;
 
-      const cacheKey = langMode + ':' + chIdx;
+      const rawHtml = await fileObj.async('text');
+      const rawText = rawHtml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+      if (rawText.length < 50) continue; // skip empty/nav files
+
+      // Try to find which chapter this file corresponds to
+      let matchIdx = -1;
+      for (let look = chIdx; look < Math.min(chIdx + 4, chFingerprints.length); look++) {
+        const fp = chFingerprints[look];
+        if (fp && fp.length > 10 && rawText.toLowerCase().includes(fp.substring(0, 20))) {
+          matchIdx = look; break;
+        }
+      }
+      if (matchIdx === -1) matchIdx = chIdx; // fallback to sequential
+
+      chIdx = matchIdx + 1; // advance past this chapter
+
+      const cacheKey = langMode + ':' + matchIdx;
       const translatedBlocks = chapterTranslated[cacheKey];
+
       if (!translatedBlocks || !translatedBlocks.every(b => b.translated !== null || !b.orig)) {
-        chIdx++; continue;
+        continue; // keep original
       }
 
-      const html = await fileObj.async('text');
-      // Always parse as HTML, then fix void elements for XHTML compatibility
-      const doc = new DOMParser().parseFromString(html, 'text/html');
+      // Strip MSO/Word conditional comments that break XHTML parsers
+      const cleanHtml = rawHtml
+        .replace(/<!--\[if[^\]]*\]>[\s\S]*?<!\[endif\]-->/gi, '')
+        .replace(/<!--\[if[^\]]*\]>[\s\S]*?$/gi, '');
+      const doc = new DOMParser().parseFromString(cleanHtml, 'text/html');
       const blockEls = [...doc.querySelectorAll('p,li,h1,h2,h3,h4,blockquote')];
 
       let bi = 0;
@@ -3856,4 +3882,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.8.8 | built 2026-06-04 22:45 -->
+<!-- Bookvoice v2.9.0 | built 2026-06-04 23:30 -->
