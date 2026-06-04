@@ -94,12 +94,8 @@ header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1
 .player-row2{display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap}
 .setting{display:flex;align-items:center;gap:7px}
 .setting label{font-size:11px;color:var(--muted);white-space:nowrap}
-input[type=range]{-webkit-appearance:none;width:90px;height:4px;background:var(--border);border-radius:2px;outline:none;border:none;padding:0}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
-.speed-val{font-size:12px;color:var(--accent);min-width:34px;font-weight:500}
 .player-row2{display:flex;align-items:center;gap:10px;padding:6px 0 2px}
 .setting-lbl{font-size:11px;color:var(--muted);flex-shrink:0}
-.player-row2 input[type=range]{flex:1}
 /* sleep timer badge */
 .sleep-badge{font-size:11px;color:var(--accent);background:var(--accent-dim);border-radius:10px;padding:2px 8px;display:none}
 .sleep-badge.on{display:inline-block}
@@ -1275,8 +1271,14 @@ async function loadChapterTranslated(chIdx, body) {
   const total = blockEls.length || 1;
   const blocks = blockEls.map(el => ({ orig: (el.innerText || el.textContent || '').trim(), tag: el.tagName.toLowerCase(), translated: null }));
 
-  // Show empty reader body right away, render blocks as they arrive
-  body.innerHTML = '';
+  // Show progress bar in reader body while translating
+  body.innerHTML = `
+    <div id="ch-translate-progress" style="padding:40px 0 20px;text-align:center">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Translating paragraph <span id="ch-tr-done">0</span> / ${total}</div>
+      <div style="background:var(--surface2);border-radius:8px;height:6px;overflow:hidden;max-width:260px;margin:0 auto">
+        <div id="ch-tr-bar" style="height:100%;background:var(--accent);width:0%;transition:width .2s"></div>
+      </div>
+    </div>`;
   chapterTranslated[cacheKey] = blocks;
 
   // Status in now-label
@@ -1295,10 +1297,19 @@ async function loadChapterTranslated(chIdx, body) {
     }
     done++;
     // Append this block to body immediately
+    // Remove progress bar on first paragraph, then append
+    if (done === 1) {
+      const prog = document.getElementById('ch-translate-progress');
+      if (prog) prog.remove();
+    }
     const el = document.createElement(block.tag || 'p');
     el.textContent = block.translated;
     body.appendChild(el);
-    // Update progress indicator
+    // Update progress in bar and indicator
+    const bar = document.getElementById('ch-tr-bar');
+    const lbl = document.getElementById('ch-tr-done');
+    if (bar) bar.style.width = Math.round((done / total) * 100) + '%';
+    if (lbl) lbl.textContent = done;
     if (indicator) indicator.textContent = `🌐 ${done}/${total}`;
     // Small delay every 5 paragraphs to avoid rate limiting
     if (done % 5 === 0) await new Promise(r => setTimeout(r, 300));
@@ -3680,4 +3691,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.8.0 | built 2026-06-04 19:00 -->
+<!-- Bookvoice v2.8.1 | built 2026-06-04 19:30 -->
