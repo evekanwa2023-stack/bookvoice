@@ -244,6 +244,27 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
 <div class="sync-toast" id="sync-toast"></div>
 <div class="drive-reconnect-bar" id="drive-reconnect-bar"><span>☁️ Google Drive disconnected — tap to reconnect</span><button onclick="tapReconnectDrive()">Reconnect</button></div>
 
+<!-- PRE-TRANSLATE DIALOG -->
+<div id="pretranslate-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:340px;width:90%;text-align:center">
+    <div style="font-size:24px;margin-bottom:12px">🌐</div>
+    <div id="pt-title" style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:8px">Translate whole book?</div>
+    <div id="pt-subtitle" style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.6">Translate all chapters to <strong id="pt-lang"></strong> before reading. You can also start reading now and translate as you go.</div>
+    <!-- Progress bar (hidden until translating) -->
+    <div id="pt-progress-wrap" style="display:none;margin-bottom:16px">
+      <div style="background:var(--surface2);border-radius:8px;height:8px;overflow:hidden;margin-bottom:8px">
+        <div id="pt-progress-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s"></div>
+      </div>
+      <div id="pt-progress-label" style="font-size:12px;color:var(--muted)">Translating chapter 0 / 0...</div>
+    </div>
+    <div id="pt-buttons" style="display:flex;flex-direction:column;gap:10px">
+      <button onclick="startPreTranslate()" class="btn" style="justify-content:center">Translate whole book first</button>
+      <button onclick="skipPreTranslate()" class="btn ghost" style="justify-content:center">Start reading now</button>
+    </div>
+    <button id="pt-open-btn" onclick="finishPreTranslate()" class="btn" style="justify-content:center;width:100%;display:none;margin-top:4px">Open book ✓</button>
+  </div>
+</div>
+
 <!-- LIBRARY OPTIONS SHEET -->
 <div class="overlay" id="lib-options-sheet">
   <div class="overlay-bg" onclick="closeSheet('lib-options-sheet')"></div>
@@ -426,9 +447,12 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
       </div>
       <div class="setting-row">
         <label>Speed</label>
-        <div class="right">
-          <input type="range" id="speed-sl2" min="0.5" max="3.0" step="0.05" value="1.7" oninput="onSpeed(this.value)">
-          <span class="speed-val" id="speed-val2">1.70×</span>
+        <div class="right" style="gap:6px">
+          <button class="fs-btn" onclick="changeSpeedStep(-1)">−</button>
+          <input type="number" id="speed-input" min="0.5" max="3.0" step="0.05" value="1.70"
+            style="width:52px;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--accent);font-size:13px;padding:4px 2px;font-family:inherit"
+            onchange="setSpeedInput(this.value)" onclick="this.select()">
+          <button class="fs-btn" onclick="changeSpeedStep(1)">+</button>
         </div>
       </div>
       <div class="setting-row">
@@ -645,8 +669,11 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
           <button class="ctrl-btn" onclick="changeFontSize(-1)" style="width:28px;height:28px;font-size:11px;flex-shrink:0" title="Font size">A-</button>
           <button class="ctrl-btn" onclick="changeFontSize(1)" style="width:28px;height:28px;font-size:11px;flex-shrink:0" title="Font size">A+</button>
           <span class="setting-lbl" style="margin-left:4px">Speed</span>
-          <input type="range" id="speed-sl" min="0.5" max="3.0" step="0.05" value="1.7" oninput="onSpeed(this.value)">
-          <span class="speed-val" id="speed-val">1.70×</span>
+          <button class="ctrl-btn" onclick="changeSpeedStep(-1)" style="width:28px;height:28px;font-size:15px;flex-shrink:0">−</button>
+          <input type="number" id="speed-val" min="0.5" max="3.0" step="0.05" value="1.70"
+            style="width:46px;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--accent);font-size:13px;padding:4px 2px;font-family:inherit;font-weight:500"
+            onchange="setSpeedInput(this.value)" onclick="this.select()">
+          <button class="ctrl-btn" onclick="changeSpeedStep(1)" style="width:28px;height:28px;font-size:15px;flex-shrink:0">+</button>
           <button class="ctrl-btn" onclick="openSheet('findreplace-sheet')" style="width:28px;height:28px;font-size:11px;flex-shrink:0" title="Find & Replace">A→B</button>
         </div>
       </div>
@@ -1198,6 +1225,10 @@ function splitChunks(text,maxLen) {
 }
 
 // ── CHAPTER ──
+// ── TRANSLATION STATE ──
+let chapterTranslated = {}; // key: "mode:chapterIdx" → array of {orig, translated} per block
+let bgTranslateController = null; // AbortController for background translation
+
 async function loadChapter(i) {
   currentChapter=i; sentenceIndex=0;
   setSidebarActive(i);
@@ -1209,39 +1240,189 @@ async function loadChapter(i) {
   document.getElementById('prog-time').textContent='Ch '+(i+1)+' / '+chapters.length;
 
   if (langMode !== 'orig') {
-    // Show loading state
-    body.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--muted);font-size:14px">Translating...</div>';
-    clearHighlight();
-    // Extract plain text paragraphs, translate, rebuild HTML
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = chapters[i].html;
-    const blocks = tempDiv.querySelectorAll('p,li,h1,h2,h3,h4,blockquote');
-    if (blocks.length) {
-      for (const block of blocks) {
-        const orig = block.innerText.trim();
-        if (!orig) continue;
-        try {
-          const translated = await applyLangMode(orig);
-          block.textContent = translated;
-        } catch(e) { /* keep original */ }
-      }
-    } else {
-      const orig = tempDiv.innerText.trim();
-      if (orig) {
-        const translated = await applyLangMode(orig);
-        tempDiv.textContent = translated;
-      }
-    }
-    body.innerHTML = tempDiv.innerHTML;
+    await loadChapterTranslated(i, body);
   } else {
     body.innerHTML = chapters[i].html;
+    clearHighlight();
+    wrapSentences(body);
+    updateMSChapter();
+    updateSentCounter();
   }
 
-  clearHighlight();
-  wrapSentences(body);
-  updateMSChapter();
-  updateSentCounter();
+  // Background: preload next chapters quietly
+  if (langMode !== 'orig') {
+    startBgTranslate(i + 1);
+  }
 }
+
+async function loadChapterTranslated(chIdx, body) {
+  const cacheKey = langMode + ':' + chIdx;
+
+  // Already fully translated — render instantly
+  if (chapterTranslated[cacheKey] && chapterTranslated[cacheKey].every(b => b.translated !== null || !b.orig)) {
+    renderTranslatedBlocks(chapterTranslated[cacheKey], body);
+    return;
+  }
+
+  // Build block list from chapter HTML
+  const tempDiv = document.createElement('div');
+  tempDiv.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
+  tempDiv.innerHTML = chapters[chIdx].html;
+  document.body.appendChild(tempDiv);
+  const blockEls = [...tempDiv.querySelectorAll('p,li,h1,h2,h3,h4,blockquote')];
+  document.body.removeChild(tempDiv);
+
+  const total = blockEls.length || 1;
+  const blocks = blockEls.map(el => ({ orig: (el.innerText || el.textContent || '').trim(), tag: el.tagName.toLowerCase(), translated: null }));
+
+  // Show empty reader body right away, render blocks as they arrive
+  body.innerHTML = '';
+  chapterTranslated[cacheKey] = blocks;
+
+  // Status in now-label
+  const indicator = document.getElementById('lang-indicator');
+
+  let done = 0;
+  for (let b = 0; b < blocks.length; b++) {
+    // Stop if user navigated away to a different chapter
+    if (currentChapter !== chIdx) return;
+    const block = blocks[b];
+    if (!block.orig) { done++; continue; }
+    try {
+      block.translated = await applyLangMode(block.orig);
+    } catch(e) {
+      block.translated = block.orig;
+    }
+    done++;
+    // Append this block to body immediately
+    const el = document.createElement(block.tag || 'p');
+    el.textContent = block.translated;
+    body.appendChild(el);
+    // Update progress indicator
+    if (indicator) indicator.textContent = `🌐 ${done}/${total}`;
+    // Small delay every 5 paragraphs to avoid rate limiting
+    if (done % 5 === 0) await new Promise(r => setTimeout(r, 300));
+  }
+
+  // Final re-wrap once ALL blocks are translated
+  if (currentChapter === chIdx) {
+    clearHighlight();
+    wrapSentences(body);
+    updateMSChapter();
+    updateSentCounter();
+    if (indicator) indicator.textContent = '🌐 ' + (LANG_LABELS[langMode] || langMode.toUpperCase());
+  }
+}
+
+function renderTranslatedBlocks(blocks, body) {
+  body.innerHTML = '';
+  for (const block of blocks) {
+    if (!block.orig) continue;
+    const el = document.createElement(block.tag || 'p');
+    el.textContent = block.translated || block.orig;
+    body.appendChild(el);
+  }
+}
+
+async function startBgTranslate(fromChIdx) {
+  // Cancel any previous background job
+  if (bgTranslateController) bgTranslateController.aborted = true;
+  bgTranslateController = { aborted: false };
+  const ctrl = bgTranslateController;
+
+  for (let ci = fromChIdx; ci < Math.min(fromChIdx + 3, chapters.length); ci++) {
+    if (ctrl.aborted) return;
+    const cacheKey = langMode + ':' + ci;
+    if (chapterTranslated[cacheKey]) continue; // already done
+
+    const tempDiv = document.createElement('div');
+    tempDiv.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
+    tempDiv.innerHTML = chapters[ci].html;
+    document.body.appendChild(tempDiv);
+    const blockEls = [...tempDiv.querySelectorAll('p,li,h1,h2,h3,h4,blockquote')];
+    document.body.removeChild(tempDiv);
+
+    const blocks = blockEls.map(el => ({ orig: (el.innerText || el.textContent || '').trim(), tag: el.tagName.toLowerCase(), translated: null }));
+    chapterTranslated[cacheKey] = blocks;
+
+    for (const block of blocks) {
+      if (ctrl.aborted) return;
+      if (!block.orig) continue;
+      try { block.translated = await applyLangMode(block.orig); }
+      catch(e) { block.translated = block.orig; }
+      // Gentle pace for background — don't compete with foreground
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+}
+// ── PRE-TRANSLATE DIALOG ──
+let ptResolve = null; // resolves when user makes a choice
+
+function showPreTranslateDialog() {
+  return new Promise(resolve => {
+    ptResolve = resolve;
+    const langNames = {'en':'English','th':'Thai','zh':'Chinese','zh-en':'English','zh-th':'Thai','zh-en-th':'Thai'};
+    document.getElementById('pt-lang').textContent = langNames[langMode] || langMode;
+    document.getElementById('pt-progress-wrap').style.display = 'none';
+    document.getElementById('pt-buttons').style.display = 'flex';
+    document.getElementById('pt-open-btn').style.display = 'none';
+    document.getElementById('pt-title').textContent = 'Translate whole book?';
+    const overlay = document.getElementById('pretranslate-overlay');
+    overlay.style.display = 'flex';
+  });
+}
+
+function skipPreTranslate() {
+  document.getElementById('pretranslate-overlay').style.display = 'none';
+  if (ptResolve) { ptResolve('skip'); ptResolve = null; }
+}
+
+function finishPreTranslate() {
+  document.getElementById('pretranslate-overlay').style.display = 'none';
+  if (ptResolve) { ptResolve('done'); ptResolve = null; }
+}
+
+async function startPreTranslate() {
+  document.getElementById('pt-buttons').style.display = 'none';
+  document.getElementById('pt-progress-wrap').style.display = 'block';
+  document.getElementById('pt-title').textContent = 'Translating...';
+
+  const total = chapters.length;
+  for (let ci = 0; ci < total; ci++) {
+    const cacheKey = langMode + ':' + ci;
+    // Update chapter progress
+    document.getElementById('pt-progress-bar').style.width = Math.round((ci / total) * 100) + '%';
+    document.getElementById('pt-progress-label').textContent = `Chapter ${ci + 1} / ${total}`;
+
+    if (chapterTranslated[cacheKey] && chapterTranslated[cacheKey].every(b => b.translated !== null || !b.orig)) {
+      continue; // already cached
+    }
+
+    // Build blocks
+    const tempDiv = document.createElement('div');
+    tempDiv.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
+    tempDiv.innerHTML = chapters[ci].html;
+    document.body.appendChild(tempDiv);
+    const blockEls = [...tempDiv.querySelectorAll('p,li,h1,h2,h3,h4,blockquote')];
+    document.body.removeChild(tempDiv);
+    const blocks = blockEls.map(el => ({ orig: (el.innerText || el.textContent || '').trim(), tag: el.tagName.toLowerCase(), translated: null }));
+    chapterTranslated[cacheKey] = blocks;
+
+    for (let b = 0; b < blocks.length; b++) {
+      const block = blocks[b];
+      if (!block.orig) continue;
+      try { block.translated = await applyLangMode(block.orig); }
+      catch(e) { block.translated = block.orig; }
+      if (b % 5 === 0) await new Promise(r => setTimeout(r, 150));
+    }
+  }
+
+  document.getElementById('pt-progress-bar').style.width = '100%';
+  document.getElementById('pt-progress-label').textContent = 'Done! All chapters translated.';
+  document.getElementById('pt-title').textContent = '✓ Translation complete';
+  document.getElementById('pt-open-btn').style.display = 'block';
+}
+
 function jumpTo(i) {
   const w=isPlaying; stopAudio(); loadChapter(i);
   if(w){isPlaying=true;document.getElementById('play-btn').textContent='⏸';setTimeout(()=>playFrom(0),80);}
@@ -1489,8 +1670,8 @@ function setLangMode(mode) {
   updateLangBtn();
   updateVoiceRowVisibility();
   translateCache = {};
-  paraBuffer = {};
-  if (nextFetch) { nextFetch.catch(()=>{}); nextFetch = null; }
+  chapterTranslated = {};
+  if (bgTranslateController) bgTranslateController.aborted = true;
   const labels = {'orig':'Original','en':'English','th':'Thai','zh':'Chinese','zh-en':'Chinese → English','zh-th':'Chinese → Thai','zh-en-th':'Chinese → English → Thai'};
   showToast('Language: ' + (labels[mode] || mode));
   // Reload current chapter with new language
@@ -1821,20 +2002,18 @@ function prevCh(){const w=isPlaying;stopAudio();if(currentChapter>0){loadChapter
 function nextCh(){const w=isPlaying;stopAudio();if(currentChapter<chapters.length-1){loadChapter(currentChapter+1);if(w){isPlaying=true;document.getElementById('play-btn').textContent='⏸';setTimeout(()=>playFrom(0),80);}}}
 
 function onSpeed(val){
-  speed=parseFloat(val);
-  document.getElementById('speed-val').textContent=speed.toFixed(2)+'×';
-  const sv2=document.getElementById('speed-val2'); if(sv2) sv2.textContent=speed.toFixed(2)+'×';
-  document.getElementById('speed-sl').value=speed;
-  const ss2=document.getElementById('speed-sl2'); if(ss2) ss2.value=speed;
+  speed=Math.min(3.0,Math.max(0.5,parseFloat(val)||1.7));
+  const sv=document.getElementById('speed-val'); if(sv) sv.value=speed.toFixed(2);
+  const si=document.getElementById('speed-input'); if(si) si.value=speed.toFixed(2);
   localStorage.setItem('tts_speed',speed);
   if(isPlaying){const i=sentenceIndex;stopAudio();setTimeout(()=>{isStopped=false;isPlaying=true;playFrom(i);},50);}
 }
 function applySpeeds(s){
-  document.getElementById('speed-sl').value=s;
-  const ss2b=document.getElementById('speed-sl2'); if(ss2b) ss2b.value=s;
-  document.getElementById('speed-val').textContent=s.toFixed(2)+'×';
-  const sv2b=document.getElementById('speed-val2'); if(sv2b) sv2b.textContent=s.toFixed(2)+'×';
+  const sv=document.getElementById('speed-val'); if(sv) sv.value=s.toFixed(2);
+  const si=document.getElementById('speed-input'); if(si) si.value=s.toFixed(2);
 }
+function setSpeedInput(val){onSpeed(val);}
+function changeSpeedStep(dir){onSpeed(speed+dir*0.05);}
 
 // ── FONT SIZE ──
 function changeFontSize(delta){
@@ -2903,6 +3082,21 @@ async function openBookFromLibrary(idx) {
     document.getElementById('setup-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     buildSidebar(); buildDownloadList(); setupMediaSession();
+    // Show pre-translate dialog if lang mode is on and book not yet cached
+    if (langMode !== 'orig') {
+      const alreadyCached = chapters.every((_, ci) => {
+        const key = langMode + ':' + ci;
+        return chapterTranslated[key] && chapterTranslated[key].every(b => b.translated !== null || !b.orig);
+      });
+      if (!alreadyCached) {
+        showPreTranslateDialog().then(choice => {
+          loadChapter(book.chapter);
+          sentenceIndex = book.sentence || 0;
+          updateSentCounter();
+        });
+        return;
+      }
+    }
     loadChapter(book.chapter);
     sentenceIndex = book.sentence || 0;
     updateSentCounter();
@@ -3486,4 +3680,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.7.4 | built 2026-06-04 16:00 -->
+<!-- Bookvoice v2.8.0 | built 2026-06-04 19:00 -->
