@@ -1428,12 +1428,17 @@ async function exportTranslatedEpub() {
       }
 
       const html = await fileObj.async('text');
-      const doc = new DOMParser().parseFromString(html, 'text/html');
+      // Parse as XHTML to preserve structure
+      const isXhtml = html.includes('xmlns') || filePath.endsWith('.xhtml');
+      const parser = new DOMParser();
+      const doc = isXhtml
+        ? parser.parseFromString(html, 'application/xhtml+xml')
+        : parser.parseFromString(html, 'text/html');
       const blockEls = [...doc.querySelectorAll('p,li,h1,h2,h3,h4,blockquote')];
 
       let bi = 0;
       for (const el of blockEls) {
-        const orig = (el.innerText || el.textContent || '').trim();
+        const orig = (el.textContent || '').trim();
         if (!orig) continue;
         if (bi < translatedBlocks.length && translatedBlocks[bi].translated) {
           el.textContent = translatedBlocks[bi].translated;
@@ -1441,7 +1446,15 @@ async function exportTranslatedEpub() {
         bi++;
       }
 
-      zip.file(filePath, '<!DOCTYPE html>\n' + doc.documentElement.outerHTML);
+      // Serialize back — use XMLSerializer for xhtml, outerHTML for html
+      let newHtml;
+      if (isXhtml) {
+        newHtml = new XMLSerializer().serializeToString(doc);
+        if (!newHtml.startsWith('<?xml')) newHtml = '<?xml version="1.0" encoding="utf-8"?>\n' + newHtml;
+      } else {
+        newHtml = '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+      }
+      zip.file(filePath, newHtml);
       chIdx++;
     }
 
@@ -3849,4 +3862,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.8.6 | built 2026-06-04 22:00 -->
+<!-- Bookvoice v2.8.7 | built 2026-06-04 22:30 -->
