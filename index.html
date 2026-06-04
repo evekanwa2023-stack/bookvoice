@@ -1416,33 +1416,47 @@ async function exportTranslatedEpub() {
     const spineIds = [...opfDoc.querySelectorAll('spine itemref')].map(r => r.getAttribute('idref'));
     const spineFiles = spineIds.map(id => opfDir + manifest[id]).filter(Boolean);
 
-    // Build fingerprints from chapters[] to match spine files correctly
-    // (spine may have titlepage/toc files that shift the index)
-    const chFingerprints = chapters.map(ch => {
-      const t = (ch.text || ch.html.replace(/<[^>]+>/g,' ')).replace(/\s+/g,' ').trim();
-      return t.substring(0, 60).toLowerCase();
-    });
+    // Build spine file → chapter index mapping
+    // Strategy: read each spine file, find first 30 chars of its text,
+    // then search which chapter contains that text
+    const spineToChapter = new Map();
+    for (let ci = 0; ci < chapters.length; ci++) {
+      const chText = chapters[ci].html.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().toLowerCase();
+      chapterLoop: for (const fp of spineFiles) {
+        if (spineToChapter.has(fp)) continue;
+        const fo = zip.file(fp) || zip.file(decodeURIComponent(fp));
+        if (!fo) continue;
+        const raw = await fo.async('text');
+        const rawT = raw.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().toLowerCase();
+        if (rawT.length < 50) continue;
+        // Check if this spine file text appears in the chapter html
+        const sample = rawT.substring(0, 60).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+        if (chText.includes(rawT.substring(0, 40))) {
+          spineToChapter.set(fp, ci);
+          break chapterLoop;
+        }
+      }
+    }
+    // Fallback: assign unmapped content files sequentially
+    let fallbackIdx = 0;
+    for (const fp of spineFiles) {
+      if (spineToChapter.has(fp)) { fallbackIdx = spineToChapter.get(fp) + 1; continue; }
+      const fo = zip.file(fp) || zip.file(decodeURIComponent(fp));
+      if (!fo) continue;
+      const raw = await fo.async('text');
+      const rawT = raw.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+      if (rawT.length < 100) continue; // skip nav/titlepage
+      spineToChapter.set(fp, fallbackIdx++);
+    }
 
-    let chIdx = 0;
     for (const filePath of spineFiles) {
       const fileObj = zip.file(filePath) || zip.file(decodeURIComponent(filePath));
       if (!fileObj) continue;
 
+      const matchIdx = spineToChapter.get(filePath);
+      if (matchIdx === undefined) continue;
+
       const rawHtml = await fileObj.async('text');
-      const rawText = rawHtml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
-      if (rawText.length < 50) continue; // skip empty/nav files
-
-      // Try to find which chapter this file corresponds to
-      let matchIdx = -1;
-      for (let look = chIdx; look < Math.min(chIdx + 4, chFingerprints.length); look++) {
-        const fp = chFingerprints[look];
-        if (fp && fp.length > 10 && rawText.toLowerCase().includes(fp.substring(0, 20))) {
-          matchIdx = look; break;
-        }
-      }
-      if (matchIdx === -1) matchIdx = chIdx; // fallback to sequential
-
-      chIdx = matchIdx + 1; // advance past this chapter
 
       const cacheKey = langMode + ':' + matchIdx;
       const translatedBlocks = chapterTranslated[cacheKey];
@@ -3882,4 +3896,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.9.0 | built 2026-06-04 23:30 -->
+<!-- Bookvoice v2.9.1 | built 2026-06-04 23:45 -->
