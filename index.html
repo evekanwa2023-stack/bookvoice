@@ -521,6 +521,42 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
         <label>A→B Find &amp; Replace</label>
         <button class="btn ghost" style="font-size:12px;padding:6px 14px" onclick="closeSheet('more-sheet');openSheet('findreplace-sheet')">Open</button>
       </div>
+      <div class="setting-row">
+        <label>🌐 ภาษาที่อ่าน</label>
+        <select id="lang-mode-sel" onchange="setLangMode(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:6px 10px;font-family:inherit">
+          <option value="orig">ต้นฉบับ (ไม่แปล)</option>
+          <option value="en">→ อังกฤษ (EN)</option>
+          <option value="th">→ ไทย (TH)</option>
+          <option value="zh">→ จีน (ZH)</option>
+          <option value="zh-en">จีน → อังกฤษ</option>
+          <option value="zh-th">จีน → ไทย</option>
+          <option value="zh-en-th">จีน → อังกฤษ → ไทย</option>
+        </select>
+      </div>
+      <div class="setting-row" id="th-voice-row">
+        <label>🇹🇭 เสียงไทย</label>
+        <select id="th-voice-sel" onchange="localStorage.setItem('bv_th_voice',this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:6px 10px;font-family:inherit">
+          <option value="th-TH-PremwadeeNeural">Premwadee (หญิง)</option>
+          <option value="th-TH-NiwatNeural">Niwat (ชาย)</option>
+          <option value="th-TH-AcharaNeural">Achara (หญิง)</option>
+        </select>
+      </div>
+      <div class="setting-row" id="en-voice-row">
+        <label>🇬🇧 เสียงอังกฤษ</label>
+        <select id="en-voice-sel" onchange="localStorage.setItem('bv_en_voice',this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:6px 10px;font-family:inherit">
+          <option value="en-US-EmmaNeural">Emma (หญิง)</option>
+          <option value="en-US-JennyNeural">Jenny (หญิง)</option>
+          <option value="en-US-GuyNeural">Guy (ชาย)</option>
+        </select>
+      </div>
+      <div class="setting-row" id="zh-voice-row" style="display:none">
+        <label>🇨🇳 เสียงจีน</label>
+        <select id="zh-voice-sel" onchange="localStorage.setItem('bv_zh_voice',this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:6px 10px;font-family:inherit">
+          <option value="zh-CN-XiaoxiaoNeural">Xiaoxiao (หญิง)</option>
+          <option value="zh-CN-YunxiNeural">Yunxi (ชาย)</option>
+          <option value="zh-TW-HsiaoChenNeural">HsiaoChen TW (หญิง)</option>
+        </select>
+      </div>
 
       <!-- SECTION 2: More options — collapsed by default -->
       <div id="more-extra" style="display:none">
@@ -599,7 +635,7 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
           <button class="ctrl-btn" onclick="nextSentence()" title="Next sentence">⏩</button>
           <button class="ctrl-btn" onclick="nextCh()" title="Next chapter">⏭</button>
           <div class="player-info">
-            <div class="now-label"><span class="dot" id="dot"></span><span id="status-txt">Ready</span></div>
+            <div class="now-label"><span class="dot" id="dot"></span><span id="status-txt">Ready</span><span id="lang-indicator" style="font-size:10px;color:var(--accent);margin-left:4px"></span></div>
             <div class="now-ch" id="now-ch">—</div>
             <div id="sent-counter" style="font-size:10px;color:var(--accent);margin-top:2px"></div>
           </div>
@@ -657,6 +693,8 @@ setTimeout(() => {
 }, 100);
 let pronounceRules = JSON.parse(localStorage.getItem('bv_pronounce') || '[]');
 let ruleScope = 'global';
+let langMode = localStorage.getItem('bv_lang_mode') || 'orig'; // orig|en|th|zh|zh-en|zh-th|zh-en-th
+let translateCache = {}; // key: "mode:text" → final translated text
 let paragraphs = [];
 let paraBuffer = {};
 let nextFetch = null;
@@ -671,6 +709,17 @@ window.addEventListener('DOMContentLoaded', () => {
   updateDriveStatusDot();
   if (gdriveEnabled) startReconnectChecker();
   updateGDriveUI();
+  // Init language selectors
+  const thSel = document.getElementById('th-voice-sel');
+  if (thSel) thSel.value = localStorage.getItem('bv_th_voice') || 'th-TH-PremwadeeNeural';
+  const enSel = document.getElementById('en-voice-sel');
+  if (enSel) enSel.value = localStorage.getItem('bv_en_voice') || 'en-US-EmmaNeural';
+  const zhSel = document.getElementById('zh-voice-sel');
+  if (zhSel) zhSel.value = localStorage.getItem('bv_zh_voice') || 'zh-CN-XiaoxiaoNeural';
+  const lmSel = document.getElementById('lang-mode-sel');
+  if (lmSel) lmSel.value = langMode;
+  updateLangBtn();
+  updateVoiceRowVisibility();
   if (serverUrl) {
     startConnectionMonitor();
     if (library.length > 0) { showLibrary(); }
@@ -1391,8 +1440,97 @@ function getBgAudio() {
   return bgAudio;
 }
 
+// ── LANGUAGE / TRANSLATION MODE ──
+const LANG_LABELS = {
+  'orig':'ORIG', 'en':'EN', 'th':'TH', 'zh':'ZH',
+  'zh-en':'ZH→EN', 'zh-th':'ZH→TH', 'zh-en-th':'ZH→TH'
+};
+const LANG_VOICES = {
+  'en': () => localStorage.getItem('bv_en_voice') || 'en-US-EmmaNeural',
+  'th': () => localStorage.getItem('bv_th_voice') || 'th-TH-PremwadeeNeural',
+  'zh': () => localStorage.getItem('bv_zh_voice') || 'zh-CN-XiaoxiaoNeural',
+  'zh-en': () => localStorage.getItem('bv_en_voice') || 'en-US-EmmaNeural',
+  'zh-th': () => localStorage.getItem('bv_th_voice') || 'th-TH-PremwadeeNeural',
+  'zh-en-th': () => localStorage.getItem('bv_th_voice') || 'th-TH-PremwadeeNeural',
+};
+
+function setLangMode(mode) {
+  langMode = mode;
+  localStorage.setItem('bv_lang_mode', mode);
+  updateLangBtn();
+  updateVoiceRowVisibility();
+  // Clear cache and buffer on mode change
+  translateCache = {};
+  paraBuffer = {};
+  if (nextFetch) { nextFetch.catch(()=>{}); nextFetch = null; }
+  const labels = {'orig':'ต้นฉบับ','en':'อังกฤษ','th':'ไทย','zh':'จีน','zh-en':'จีน→อังกฤษ','zh-th':'จีน→ไทย','zh-en-th':'จีน→อังกฤษ→ไทย'};
+  showToast('ภาษา: ' + (labels[mode] || mode));
+}
+
+function updateLangBtn() {
+  // No player button anymore — show mode indicator next to status text
+  const label = LANG_LABELS[langMode] || langMode.toUpperCase();
+  const indicator = document.getElementById('lang-indicator');
+  if (indicator) {
+    indicator.textContent = langMode !== 'orig' ? '🌐 ' + label : '';
+  }
+  const lmSel = document.getElementById('lang-mode-sel');
+  if (lmSel) lmSel.value = langMode;
+}
+
+function updateVoiceRowVisibility() {
+  const showTh = ['th','zh-th','zh-en-th'].includes(langMode);
+  const showEn = ['en','zh-en','zh-en-th'].includes(langMode);
+  const showZh = ['zh'].includes(langMode);
+  const thRow = document.getElementById('th-voice-row');
+  const enRow = document.getElementById('en-voice-row');
+  const zhRow = document.getElementById('zh-voice-row');
+  if (thRow) thRow.style.display = showTh ? '' : 'none';
+  if (enRow) enRow.style.display = showEn ? '' : 'none';
+  if (zhRow) zhRow.style.display = showZh ? '' : 'none';
+}
+
+async function translateStep(text, target) {
+  try {
+    const url = `${serverUrl}/translate?` + new URLSearchParams({ text, target });
+    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error('translate failed');
+    const data = await r.json();
+    return data.translated || text;
+  } catch(e) {
+    console.warn('Translation failed:', e);
+    return text;
+  }
+}
+
+async function applyLangMode(text) {
+  if (langMode === 'orig') return text;
+  const cacheKey = langMode + ':' + text;
+  if (translateCache[cacheKey]) return translateCache[cacheKey];
+  let result = text;
+  if (langMode === 'en')       result = await translateStep(text, 'en');
+  else if (langMode === 'th')  result = await translateStep(text, 'th');
+  else if (langMode === 'zh')  result = await translateStep(text, 'zh-CN');
+  else if (langMode === 'zh-en') {
+    const en = await translateStep(text, 'en');
+    result = en;
+  } else if (langMode === 'zh-th') {
+    result = await translateStep(text, 'th');
+  } else if (langMode === 'zh-en-th') {
+    const en = await translateStep(text, 'en');
+    result = await translateStep(en, 'th');
+  }
+  translateCache[cacheKey] = result;
+  return result;
+}
+
 async function fetchAudioBlob(text) {
-  const url = `${serverUrl}/tts?` + new URLSearchParams({text, speed});
+  let finalText = applyPronunciation(text);
+  finalText = await applyLangMode(finalText);
+  finalText = applyPronunciation(finalText); // apply rules on translated text too
+  const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
+  const params = { text: finalText, speed, voice };
+  const url = `${serverUrl}/tts?` + new URLSearchParams(params);
   const r = await fetch(url);
   if (!r.ok) throw new Error('TTS fetch failed');
   const blob = await r.blob();
@@ -1453,7 +1591,7 @@ async function playFrom(startSentIdx) {
   // Fetch first blob
   let currentBlobUrl = null;
   try {
-    currentBlobUrl = await fetchAudioBlob(applyPronunciation(firstParaText));
+    currentBlobUrl = await fetchAudioBlob(firstParaText);
   } catch(e) { return; }
 
   if (isStopped || mySession !== playSession) {
@@ -1462,10 +1600,10 @@ async function playFrom(startSentIdx) {
 
   // Pre-fetch next blob in parallel
   let nextBlobPromise = pIdx+1 < paragraphs.length
-    ? fetchAudioBlob(applyPronunciation(paragraphs[pIdx+1].text))
+    ? fetchAudioBlob(paragraphs[pIdx+1].text)
     : null;
   let nextNextBlobPromise = pIdx+2 < paragraphs.length
-    ? fetchAudioBlob(applyPronunciation(paragraphs[pIdx+2].text))
+    ? fetchAudioBlob(paragraphs[pIdx+2].text)
     : null;
 
   while (pIdx < paragraphs.length) {
@@ -1550,7 +1688,7 @@ async function playFrom(startSentIdx) {
         // Shift the preload queue
         nextBlobPromise = nextNextBlobPromise;
         nextNextBlobPromise = pIdx+2 < paragraphs.length
-          ? fetchAudioBlob(applyPronunciation(paragraphs[pIdx+2].text))
+          ? fetchAudioBlob(paragraphs[pIdx+2].text)
           : null;
       } catch(e) { pIdx++; continue; }
     }
@@ -3309,4 +3447,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.6.7 | built 2026-06-03 22:10 -->
+<!-- Bookvoice v2.7.3 | built 2026-06-04 15:30 -->
