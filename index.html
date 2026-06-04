@@ -1764,6 +1764,7 @@ const LANG_LABELS = {
   'zh-en':'ZH→EN', 'zh-th':'ZH→TH', 'zh-en-th':'ZH→TH'
 };
 const LANG_VOICES = {
+  'orig': () => localStorage.getItem('bv_en_voice') || 'en-US-EmmaNeural',
   'en': () => localStorage.getItem('bv_en_voice') || 'en-US-EmmaNeural',
   'th': () => localStorage.getItem('bv_th_voice') || 'th-TH-PremwadeeNeural',
   'zh': () => localStorage.getItem('bv_zh_voice') || 'zh-CN-XiaoxiaoNeural',
@@ -3788,4 +3789,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.8.3 | built 2026-06-04 20:30 -->
+<!-- Bookvoice v2.8.4 | built 2026-06-04 20:45 -->
