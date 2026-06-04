@@ -522,19 +522,19 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
         <button class="btn ghost" style="font-size:12px;padding:6px 14px" onclick="closeSheet('more-sheet');openSheet('findreplace-sheet')">Open</button>
       </div>
       <div class="setting-row">
-        <label>🌐 ภาษาที่อ่าน</label>
+        <label>🌐 Read Language</label>
         <select id="lang-mode-sel" onchange="setLangMode(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:6px 10px;font-family:inherit">
-          <option value="orig">ต้นฉบับ (ไม่แปล)</option>
-          <option value="en">→ อังกฤษ (EN)</option>
-          <option value="th">→ ไทย (TH)</option>
-          <option value="zh">→ จีน (ZH)</option>
-          <option value="zh-en">จีน → อังกฤษ</option>
-          <option value="zh-th">จีน → ไทย</option>
-          <option value="zh-en-th">จีน → อังกฤษ → ไทย</option>
+          <option value="orig">Original (no translation)</option>
+          <option value="en">Translate → English</option>
+          <option value="th">Translate → Thai</option>
+          <option value="zh">Translate → Chinese</option>
+          <option value="zh-en">Chinese → English</option>
+          <option value="zh-th">Chinese → Thai</option>
+          <option value="zh-en-th">Chinese → English → Thai</option>
         </select>
       </div>
       <div class="setting-row" id="th-voice-row">
-        <label>🇹🇭 เสียงไทย</label>
+        <label>🇹🇭 Thai Voice</label>
         <select id="th-voice-sel" onchange="localStorage.setItem('bv_th_voice',this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:6px 10px;font-family:inherit">
           <option value="th-TH-PremwadeeNeural">Premwadee (หญิง)</option>
           <option value="th-TH-NiwatNeural">Niwat (ชาย)</option>
@@ -542,7 +542,7 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
         </select>
       </div>
       <div class="setting-row" id="en-voice-row">
-        <label>🇬🇧 เสียงอังกฤษ</label>
+        <label>🇬🇧 English Voice</label>
         <select id="en-voice-sel" onchange="localStorage.setItem('bv_en_voice',this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:6px 10px;font-family:inherit">
           <option value="en-US-EmmaNeural">Emma (หญิง)</option>
           <option value="en-US-JennyNeural">Jenny (หญิง)</option>
@@ -550,7 +550,7 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
         </select>
       </div>
       <div class="setting-row" id="zh-voice-row" style="display:none">
-        <label>🇨🇳 เสียงจีน</label>
+        <label>🇨🇳 Chinese Voice</label>
         <select id="zh-voice-sel" onchange="localStorage.setItem('bv_zh_voice',this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:6px 10px;font-family:inherit">
           <option value="zh-CN-XiaoxiaoNeural">Xiaoxiao (หญิง)</option>
           <option value="zh-CN-YunxiNeural">Yunxi (ชาย)</option>
@@ -1198,17 +1198,46 @@ function splitChunks(text,maxLen) {
 }
 
 // ── CHAPTER ──
-function loadChapter(i) {
+async function loadChapter(i) {
   currentChapter=i; sentenceIndex=0;
   setSidebarActive(i);
   const body=document.getElementById('reader-body');
-  body.innerHTML=chapters[i].html;
-  clearHighlight();
   document.getElementById('reader-scroll').scrollTop=0;
   document.getElementById('now-ch').textContent=chapters[i].title;
   const pct=chapters.length>1?(i/(chapters.length-1))*100:0;
   document.getElementById('prog-fill').style.width=pct+'%';
   document.getElementById('prog-time').textContent='Ch '+(i+1)+' / '+chapters.length;
+
+  if (langMode !== 'orig') {
+    // Show loading state
+    body.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--muted);font-size:14px">Translating...</div>';
+    clearHighlight();
+    // Extract plain text paragraphs, translate, rebuild HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = chapters[i].html;
+    const blocks = tempDiv.querySelectorAll('p,li,h1,h2,h3,h4,blockquote');
+    if (blocks.length) {
+      for (const block of blocks) {
+        const orig = block.innerText.trim();
+        if (!orig) continue;
+        try {
+          const translated = await applyLangMode(orig);
+          block.textContent = translated;
+        } catch(e) { /* keep original */ }
+      }
+    } else {
+      const orig = tempDiv.innerText.trim();
+      if (orig) {
+        const translated = await applyLangMode(orig);
+        tempDiv.textContent = translated;
+      }
+    }
+    body.innerHTML = tempDiv.innerHTML;
+  } else {
+    body.innerHTML = chapters[i].html;
+  }
+
+  clearHighlight();
   wrapSentences(body);
   updateMSChapter();
   updateSentCounter();
@@ -1459,12 +1488,23 @@ function setLangMode(mode) {
   localStorage.setItem('bv_lang_mode', mode);
   updateLangBtn();
   updateVoiceRowVisibility();
-  // Clear cache and buffer on mode change
   translateCache = {};
   paraBuffer = {};
   if (nextFetch) { nextFetch.catch(()=>{}); nextFetch = null; }
-  const labels = {'orig':'ต้นฉบับ','en':'อังกฤษ','th':'ไทย','zh':'จีน','zh-en':'จีน→อังกฤษ','zh-th':'จีน→ไทย','zh-en-th':'จีน→อังกฤษ→ไทย'};
-  showToast('ภาษา: ' + (labels[mode] || mode));
+  const labels = {'orig':'Original','en':'English','th':'Thai','zh':'Chinese','zh-en':'Chinese → English','zh-th':'Chinese → Thai','zh-en-th':'Chinese → English → Thai'};
+  showToast('Language: ' + (labels[mode] || mode));
+  // Reload current chapter with new language
+  if (chapters.length) {
+    const wasPlaying = isPlaying;
+    stopAudio();
+    loadChapter(currentChapter).then(() => {
+      if (wasPlaying) {
+        isPlaying = true;
+        document.getElementById('play-btn').textContent = '⏸';
+        setTimeout(() => playFrom(sentenceIndex), 100);
+      }
+    });
+  }
 }
 
 function updateLangBtn() {
@@ -1525,9 +1565,8 @@ async function applyLangMode(text) {
 }
 
 async function fetchAudioBlob(text) {
-  let finalText = applyPronunciation(text);
-  finalText = await applyLangMode(finalText);
-  finalText = applyPronunciation(finalText); // apply rules on translated text too
+  // Text on screen is already translated — just apply rules and pick voice
+  const finalText = applyPronunciation(text);
   const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
   const params = { text: finalText, speed, voice };
   const url = `${serverUrl}/tts?` + new URLSearchParams(params);
@@ -3447,4 +3486,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.7.3 | built 2026-06-04 15:30 -->
+<!-- Bookvoice v2.7.4 | built 2026-06-04 16:00 -->
