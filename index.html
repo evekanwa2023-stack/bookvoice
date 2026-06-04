@@ -1428,12 +1428,8 @@ async function exportTranslatedEpub() {
       }
 
       const html = await fileObj.async('text');
-      // Parse as XHTML to preserve structure
-      const isXhtml = html.includes('xmlns') || filePath.endsWith('.xhtml');
-      const parser = new DOMParser();
-      const doc = isXhtml
-        ? parser.parseFromString(html, 'application/xhtml+xml')
-        : parser.parseFromString(html, 'text/html');
+      // Always parse as HTML, then fix void elements for XHTML compatibility
+      const doc = new DOMParser().parseFromString(html, 'text/html');
       const blockEls = [...doc.querySelectorAll('p,li,h1,h2,h3,h4,blockquote')];
 
       let bi = 0;
@@ -1446,14 +1442,12 @@ async function exportTranslatedEpub() {
         bi++;
       }
 
-      // Serialize back — use XMLSerializer for xhtml, outerHTML for html
-      let newHtml;
-      if (isXhtml) {
-        newHtml = new XMLSerializer().serializeToString(doc);
-        if (!newHtml.startsWith('<?xml')) newHtml = '<?xml version="1.0" encoding="utf-8"?>\n' + newHtml;
-      } else {
-        newHtml = '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
-      }
+      // Serialize and fix void elements to be self-closing (required for XHTML/EPUB)
+      let newHtml = doc.documentElement.outerHTML;
+      // Self-close void elements that EPUB readers require
+      newHtml = newHtml.replace(/<(link|meta|br|hr|img|input|area|base|col|embed|param|source|track|wbr)(\s[^>]*)?>(?!<\/)/gi,
+        (m, tag, attrs) => `<${tag}${attrs || ''} />`);
+      newHtml = '<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n' + newHtml;
       zip.file(filePath, newHtml);
       chIdx++;
     }
@@ -3862,4 +3856,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.8.7 | built 2026-06-04 22:30 -->
+<!-- Bookvoice v2.8.8 | built 2026-06-04 22:45 -->
