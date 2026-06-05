@@ -58,7 +58,7 @@ header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1
 
 /* ── READER ── */
 .reader-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.reader-scroll{flex:1;overflow-y:auto;padding:32px 20px;scroll-behavior:smooth}
+.reader-scroll{flex:1;overflow-y:auto;padding:32px 20px}
 .reader-scroll::-webkit-scrollbar{width:3px}
 .reader-scroll::-webkit-scrollbar-thumb{background:var(--border)}
 .reader-body{max-width:620px;margin:0 auto;font-family:'Lora',serif;font-size:var(--fs);line-height:1.9;font-weight:400}
@@ -2230,11 +2230,10 @@ function scrollToSentence(el) {
   const scrollerRect = scroller.getBoundingClientRect();
   const elRect = el.getBoundingClientRect();
   const targetOffset = elRect.top - scrollerRect.top + scroller.scrollTop - scrollerRect.height * 0.35;
-  // Only skip if already very close to target (within 40px)
   if (Math.abs(scroller.scrollTop - targetOffset) < 40) return;
   isProgrammaticScroll = true;
-  scroller.scrollTo({ top: targetOffset, behavior: 'instant' });
-  requestAnimationFrame(() => { isProgrammaticScroll = false; });
+  scroller.scrollTop = targetOffset; // direct assignment — most reliable on iOS Safari
+  isProgrammaticScroll = false;
 }
 
 function highlightSentence(i){
@@ -3982,4 +3981,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.0.1 | built 2026-06-05 16:00 -->
+<!-- Bookvoice v3.0.2 | built 2026-06-05 16:10 -->
