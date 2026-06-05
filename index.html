@@ -2195,14 +2195,31 @@ function playSentenceAudio(audio){
     const p=audio.play(); if(p) p.catch(()=>resolve());
   });
 }
+function scrollToSentence(el, behavior = 'smooth') {
+  const scroller = document.getElementById('reader-scroll');
+  if (!scroller || !el) return;
+  const scrollerRect = scroller.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+
+  // Check if element is already visible in viewport (within middle 60%)
+  const topThreshold = scrollerRect.top + scrollerRect.height * 0.1;
+  const botThreshold = scrollerRect.top + scrollerRect.height * 0.85;
+  if (elRect.top >= topThreshold && elRect.bottom <= botThreshold) return; // already visible, no scroll needed
+
+  const targetOffset = elRect.top - scrollerRect.top + scroller.scrollTop - scrollerRect.height * 0.35;
+  isProgrammaticScroll = true;
+  // Use instant scroll for auto-follow to avoid triggering userScrolled during animation
+  scroller.scrollTo({ top: targetOffset, behavior: 'instant' });
+  // Clear flag after a short tick
+  requestAnimationFrame(() => { isProgrammaticScroll = false; });
+}
+
 function highlightSentence(i){
   sentenceEls.forEach(el=>el.classList.remove('reading'));
   const el=sentenceEls[i]; if(!el) return;
   el.classList.add('reading');
   if (!userScrolled) {
-    isProgrammaticScroll = true;
-    el.scrollIntoView({block:'center',behavior:'smooth'});
-    setTimeout(() => { isProgrammaticScroll = false; }, 500);
+    scrollToSentence(el, 'smooth');
   }
   updateSentCounter();
   trackSentenceRead();
@@ -2212,9 +2229,13 @@ function locateSentence(){
   if (userScrollTimer) clearTimeout(userScrollTimer);
   const el=sentenceEls[sentenceIndex];
   if(!el) return;
+  const scroller = document.getElementById('reader-scroll');
+  const scrollerRect = scroller.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+  const targetOffset = elRect.top - scrollerRect.top + scroller.scrollTop - scrollerRect.height * 0.35;
   isProgrammaticScroll = true;
-  el.scrollIntoView({block:'center',behavior:'smooth'});
-  setTimeout(() => { isProgrammaticScroll = false; }, 500);
+  scroller.scrollTo({ top: targetOffset, behavior: 'smooth' });
+  setTimeout(() => { isProgrammaticScroll = false; }, 1000);
   el.style.outline='2px solid var(--accent)';
   setTimeout(()=>{ el.style.outline=''; },1000);
 }
@@ -3938,4 +3959,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.9.6 | built 2026-06-05 00:45 -->
+<!-- Bookvoice v2.9.8 | built 2026-06-05 14:45 -->
