@@ -58,7 +58,7 @@ header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1
 
 /* ── READER ── */
 .reader-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.reader-scroll{flex:1;overflow-y:auto;padding:32px 20px}
+.reader-scroll{flex:1;overflow-y:auto;padding:32px 20px;scroll-behavior:smooth}
 .reader-scroll::-webkit-scrollbar{width:3px}
 .reader-scroll::-webkit-scrollbar-thumb{background:var(--border)}
 .reader-body{max-width:620px;margin:0 auto;font-family:'Lora',serif;font-size:var(--fs);line-height:1.9;font-weight:400}
@@ -2230,9 +2230,8 @@ function scrollToSentence(el) {
   const scrollerRect = scroller.getBoundingClientRect();
   const elRect = el.getBoundingClientRect();
   const targetOffset = elRect.top - scrollerRect.top + scroller.scrollTop - scrollerRect.height * 0.35;
-  if (Math.abs(scroller.scrollTop - targetOffset) < 40) return;
   isProgrammaticScroll = true;
-  scroller.scrollTop = targetOffset; // direct assignment — most reliable on iOS Safari
+  scroller.scrollTop = targetOffset;
   isProgrammaticScroll = false;
 }
 
@@ -2240,9 +2239,7 @@ function highlightSentence(i){
   sentenceEls.forEach(el=>el.classList.remove('reading'));
   const el=sentenceEls[i]; if(!el) return;
   el.classList.add('reading');
-  if (!userScrolled) {
-    scrollToSentence(el);
-  }
+  if (!userScrolled) el.scrollIntoView({block:'center',behavior:'smooth'});
   updateSentCounter();
   trackSentenceRead();
 }
@@ -2251,13 +2248,7 @@ function locateSentence(){
   if (userScrollTimer) clearTimeout(userScrollTimer);
   const el=sentenceEls[sentenceIndex];
   if(!el) return;
-  const scroller = document.getElementById('reader-scroll');
-  const scrollerRect = scroller.getBoundingClientRect();
-  const elRect = el.getBoundingClientRect();
-  const targetOffset = elRect.top - scrollerRect.top + scroller.scrollTop - scrollerRect.height * 0.35;
-  isProgrammaticScroll = true;
-  scroller.scrollTo({ top: targetOffset, behavior: 'smooth' });
-  setTimeout(() => { isProgrammaticScroll = false; }, 1000);
+  el.scrollIntoView({block:'center',behavior:'smooth'});
   el.style.outline='2px solid var(--accent)';
   setTimeout(()=>{ el.style.outline=''; },1000);
 }
@@ -3184,11 +3175,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     // Show player when scrolling
     readerScroll.addEventListener('scroll', () => {
-      if (autoHidePlayer) {
-        showPlayer();
-      }
-      // Detect manual scroll — suppress auto-scroll for 30 seconds
-      if (isPlaying && !isProgrammaticScroll) {
+      if (autoHidePlayer) showPlayer();
+    }, { passive: true });
+    // Detect MANUAL scroll via touch — more reliable than scroll event
+    readerScroll.addEventListener('touchstart', () => {
+      if (isPlaying) {
         userScrolled = true;
         if (userScrollTimer) clearTimeout(userScrollTimer);
         userScrollTimer = setTimeout(() => { userScrolled = false; }, 30000);
@@ -3981,4 +3972,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.0.2 | built 2026-06-05 16:10 -->
+<!-- Bookvoice v3.0.4 | built 2026-06-05 16:30 -->
