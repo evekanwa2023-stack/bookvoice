@@ -722,6 +722,8 @@ let translateCache = {}; // key: "mode:text" → final translated text
 let paragraphs = [];
 let paraBuffer = {};
 let nextFetch = null;
+let userScrolled = false;   // true when user manually scrolls — suppresses auto-scroll
+let userScrollTimer = null; // clears flag after 5s of no manual scroll
 let audioCtx = null;
 
 // ── INIT ──
@@ -1231,9 +1233,14 @@ let bgTranslateController = null; // AbortController for background translation
 
 async function loadChapter(i) {
   currentChapter=i; sentenceIndex=0;
+  userScrolled = false;
+  if (userScrollTimer) { clearTimeout(userScrollTimer); userScrollTimer = null; }
   setSidebarActive(i);
   const body=document.getElementById('reader-body');
-  document.getElementById('reader-scroll').scrollTop=0;
+  const scroller = document.getElementById('reader-scroll');
+  // Instant scroll to top (disable smooth temporarily)
+  scroller.style.scrollBehavior = 'auto';
+  scroller.scrollTop = 0;
   document.getElementById('now-ch').textContent=chapters[i].title;
   const pct=chapters.length>1?(i/(chapters.length-1))*100:0;
   document.getElementById('prog-fill').style.width=pct+'%';
@@ -1248,6 +1255,10 @@ async function loadChapter(i) {
     updateMSChapter();
     updateSentCounter();
   }
+
+  // Scroll to top again after content renders, then restore smooth
+  scroller.scrollTop = 0;
+  setTimeout(() => { scroller.style.scrollBehavior = ''; }, 100);
 
   // Background: preload next chapters quietly
   if (langMode !== 'orig') {
@@ -2115,6 +2126,18 @@ async function playFrom(startSentIdx) {
     startSentIdx = 0;
     pIdx++;
 
+    // Preload next chapter translation when on last paragraph
+    if (pIdx >= paragraphs.length - 1 && langMode !== 'orig' && currentChapter < chapters.length - 1) {
+      const nextCi = currentChapter + 1;
+      const nextKey = langMode + ':' + nextCi;
+      const isNextCached = chapterTranslated[nextKey] &&
+        chapterTranslated[nextKey].every(b => b.translated !== null || !b.orig);
+      if (!isNextCached) {
+        // Start translating next chapter in background now
+        startBgTranslate(nextCi);
+      }
+    }
+
     if (sleepEndChapter) { stopReading(); sleepEndChapter = false; return; }
 
     // Get next blob (should already be fetched)
@@ -2135,8 +2158,13 @@ async function playFrom(startSentIdx) {
     if (currentChapter < chapters.length - 1) {
       document.getElementById('chi-'+currentChapter)?.classList.add('done');
       document.getElementById('dch-'+currentChapter)?.classList.add('done');
-      loadChapter(currentChapter + 1);
-      await new Promise(r => setTimeout(r, 50));
+      const nextCi = currentChapter + 1;
+      // Check if next chapter already translated — if so, load instantly
+      const nextKey = langMode + ':' + nextCi;
+      const isNextReady = langMode === 'orig' ||
+        (chapterTranslated[nextKey] && chapterTranslated[nextKey].every(b => b.translated !== null || !b.orig));
+      await loadChapter(nextCi);
+      await new Promise(r => setTimeout(r, isNextReady ? 30 : 80));
       if (!isStopped && mySession === playSession) playFrom(0);
     } else {
       stopReading(); clearSavedPos();
@@ -2170,15 +2198,18 @@ function highlightSentence(i){
   sentenceEls.forEach(el=>el.classList.remove('reading'));
   const el=sentenceEls[i]; if(!el) return;
   el.classList.add('reading');
-  el.scrollIntoView({block:'center',behavior:'smooth'});
+  if (!userScrolled) {
+    el.scrollIntoView({block:'center',behavior:'smooth'});
+  }
   updateSentCounter();
   trackSentenceRead();
 }
 function locateSentence(){
+  userScrolled = false;
+  if (userScrollTimer) clearTimeout(userScrollTimer);
   const el=sentenceEls[sentenceIndex];
   if(!el) return;
   el.scrollIntoView({block:'center',behavior:'smooth'});
-  // Flash it briefly so user can spot it
   el.style.outline='2px solid var(--accent)';
   setTimeout(()=>{ el.style.outline=''; },1000);
 }
@@ -3108,6 +3139,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (autoHidePlayer) {
         showPlayer();
       }
+      // Detect manual scroll — suppress auto-scroll for 5 seconds
+      if (isPlaying) {
+        userScrolled = true;
+        if (userScrollTimer) clearTimeout(userScrollTimer);
+        userScrollTimer = setTimeout(() => { userScrolled = false; }, 30000);
+      }
     }, { passive: true });
   }
   initAutoHide();
@@ -3896,4 +3933,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.9.1 | built 2026-06-04 23:45 -->
+<!-- Bookvoice v2.9.4 | built 2026-06-05 00:20 -->
