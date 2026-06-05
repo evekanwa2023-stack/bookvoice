@@ -2224,18 +2224,14 @@ function playSentenceAudio(audio){
     const p=audio.play(); if(p) p.catch(()=>resolve());
   });
 }
-function scrollToSentence(el, behavior = 'smooth') {
+function scrollToSentence(el) {
   const scroller = document.getElementById('reader-scroll');
   if (!scroller || !el) return;
   const scrollerRect = scroller.getBoundingClientRect();
   const elRect = el.getBoundingClientRect();
-
-  // Only skip scroll if element is comfortably in the middle 50% of viewport
-  const topThreshold = scrollerRect.top + scrollerRect.height * 0.15;
-  const botThreshold = scrollerRect.top + scrollerRect.height * 0.65;
-  if (elRect.top >= topThreshold && elRect.bottom <= botThreshold) return;
-
   const targetOffset = elRect.top - scrollerRect.top + scroller.scrollTop - scrollerRect.height * 0.35;
+  // Only skip if already very close to target (within 40px)
+  if (Math.abs(scroller.scrollTop - targetOffset) < 40) return;
   isProgrammaticScroll = true;
   scroller.scrollTo({ top: targetOffset, behavior: 'instant' });
   requestAnimationFrame(() => { isProgrammaticScroll = false; });
@@ -3986,4 +3982,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.0.0 | built 2026-06-05 15:30 -->
+<!-- Bookvoice v3.0.1 | built 2026-06-05 16:00 -->
