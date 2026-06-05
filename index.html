@@ -723,7 +723,8 @@ let paragraphs = [];
 let paraBuffer = {};
 let nextFetch = null;
 let userScrolled = false;   // true when user manually scrolls — suppresses auto-scroll
-let userScrollTimer = null; // clears flag after 5s of no manual scroll
+let userScrollTimer = null; // clears flag after 30s of no manual scroll
+let isProgrammaticScroll = false; // prevents scroll events from setting userScrolled
 let audioCtx = null;
 
 // ── INIT ──
@@ -1238,9 +1239,6 @@ async function loadChapter(i) {
   setSidebarActive(i);
   const body=document.getElementById('reader-body');
   const scroller = document.getElementById('reader-scroll');
-  // Instant scroll to top (disable smooth temporarily)
-  scroller.style.scrollBehavior = 'auto';
-  scroller.scrollTop = 0;
   document.getElementById('now-ch').textContent=chapters[i].title;
   const pct=chapters.length>1?(i/(chapters.length-1))*100:0;
   document.getElementById('prog-fill').style.width=pct+'%';
@@ -1256,9 +1254,12 @@ async function loadChapter(i) {
     updateSentCounter();
   }
 
-  // Scroll to top again after content renders, then restore smooth
+  // Scroll to top after content renders
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  isProgrammaticScroll = true;
+  scroller.style.scrollBehavior = 'auto';
   scroller.scrollTop = 0;
-  setTimeout(() => { scroller.style.scrollBehavior = ''; }, 100);
+  setTimeout(() => { scroller.style.scrollBehavior = ''; isProgrammaticScroll = false; }, 100);
 
   // Background: preload next chapters quietly
   if (langMode !== 'orig') {
@@ -2199,7 +2200,9 @@ function highlightSentence(i){
   const el=sentenceEls[i]; if(!el) return;
   el.classList.add('reading');
   if (!userScrolled) {
+    isProgrammaticScroll = true;
     el.scrollIntoView({block:'center',behavior:'smooth'});
+    setTimeout(() => { isProgrammaticScroll = false; }, 500);
   }
   updateSentCounter();
   trackSentenceRead();
@@ -2209,7 +2212,9 @@ function locateSentence(){
   if (userScrollTimer) clearTimeout(userScrollTimer);
   const el=sentenceEls[sentenceIndex];
   if(!el) return;
+  isProgrammaticScroll = true;
   el.scrollIntoView({block:'center',behavior:'smooth'});
+  setTimeout(() => { isProgrammaticScroll = false; }, 500);
   el.style.outline='2px solid var(--accent)';
   setTimeout(()=>{ el.style.outline=''; },1000);
 }
@@ -2245,8 +2250,8 @@ function togglePlay(){ resetHideTimer();
     playFrom(sentenceIndex);
   }
 }
-function prevCh(){const w=isPlaying;stopAudio();if(currentChapter>0){loadChapter(currentChapter-1);if(w){isPlaying=true;document.getElementById('play-btn').textContent='⏸';setTimeout(()=>playFrom(0),80);}}}
-function nextCh(){const w=isPlaying;stopAudio();if(currentChapter<chapters.length-1){loadChapter(currentChapter+1);if(w){isPlaying=true;document.getElementById('play-btn').textContent='⏸';setTimeout(()=>playFrom(0),80);}}}
+function prevCh(){const w=isPlaying;stopAudio();if(currentChapter>0){loadChapter(currentChapter-1).then(()=>{if(w){isPlaying=true;document.getElementById('play-btn').textContent='⏸';playFrom(0);}});}  }
+function nextCh(){const w=isPlaying;stopAudio();if(currentChapter<chapters.length-1){loadChapter(currentChapter+1).then(()=>{if(w){isPlaying=true;document.getElementById('play-btn').textContent='⏸';playFrom(0);}});}  }
 
 function onSpeed(val){
   speed=Math.min(3.0,Math.max(0.5,parseFloat(val)||1.7));
@@ -3139,8 +3144,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (autoHidePlayer) {
         showPlayer();
       }
-      // Detect manual scroll — suppress auto-scroll for 5 seconds
-      if (isPlaying) {
+      // Detect manual scroll — suppress auto-scroll for 30 seconds
+      if (isPlaying && !isProgrammaticScroll) {
         userScrolled = true;
         if (userScrollTimer) clearTimeout(userScrollTimer);
         userScrollTimer = setTimeout(() => { userScrolled = false; }, 30000);
@@ -3933,4 +3938,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v2.9.4 | built 2026-06-05 00:20 -->
+<!-- Bookvoice v2.9.6 | built 2026-06-05 00:45 -->
