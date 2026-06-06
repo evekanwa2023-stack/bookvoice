@@ -1819,8 +1819,8 @@ function renderRules() {
     row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:13px';
     row.innerHTML = scopeTag +
       `<span style="flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">"${escHtml(rule.find)}" → "${escHtml(rule.replace)}"</span>` +
-      `<button onclick="editRule(${i})" style="background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;flex-shrink:0" title="Edit">✎</button>` +
-      `<button onclick="deleteRule(${i})" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;flex-shrink:0" title="Delete">×</button>`;
+      `<button onclick="editRule(${i})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:12px;cursor:pointer;flex-shrink:0;padding:4px 10px">Edit</button>` +
+      `<button onclick="deleteRule(${i})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:12px;cursor:pointer;flex-shrink:0;padding:4px 10px">Del</button>`;
     el.appendChild(row);
   });
 }
@@ -2252,13 +2252,10 @@ async function playFrom(startSentIdx) {
   if (!isStopped && mySession === playSession) {
     if (sleepEndChapter) { stopReading(); sleepEndChapter = false; return; }
     if (currentChapter < chapters.length - 1) {
-      showToast(`Ch${currentChapter}→${currentChapter+1} stopped:${isStopped} sess:${mySession===playSession}`, 8000);
       document.getElementById('chi-'+currentChapter)?.classList.add('done');
       document.getElementById('dch-'+currentChapter)?.classList.add('done');
       await loadChapter(currentChapter + 1);
-      showToast(`loaded ch${currentChapter} sents:${sentences.length} stopped:${isStopped} sess:${mySession===playSession}`, 8000);
       if (!isStopped && mySession === playSession) playFrom(0);
-      else showToast(`BLOCKED isStopped:${isStopped} my:${mySession} play:${playSession}`, 8000);
     } else {
       stopReading(); clearSavedPos();
       document.getElementById('play-btn').textContent = '▶';
@@ -4035,4 +4032,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.1.2d | built 2026-06-07 01:20 -->
+<!-- Bookvoice v3.1.4 | built 2026-06-07 02:10 -->
