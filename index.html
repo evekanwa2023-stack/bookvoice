@@ -2194,12 +2194,8 @@ async function playFrom(startSentIdx) {
     if (currentChapter < chapters.length - 1) {
       document.getElementById('chi-'+currentChapter)?.classList.add('done');
       document.getElementById('dch-'+currentChapter)?.classList.add('done');
-      const nextCi = currentChapter + 1;
-      // Start loading chapter but don't await full translation
-      // playFrom will wait for sentences to be available via wrapSentences
-      loadChapter(nextCi).then(() => {
-        if (!isStopped && mySession === playSession) playFrom(0);
-      });
+      await loadChapter(currentChapter + 1);
+      if (!isStopped && mySession === playSession) playFrom(0);
     } else {
       stopReading(); clearSavedPos();
       document.getElementById('play-btn').textContent = '▶';
@@ -3976,4 +3972,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.0.5 | built 2026-06-07 00:00 -->
+<!-- Bookvoice v3.0.6 | built 2026-06-07 00:10 -->
