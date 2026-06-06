@@ -2252,10 +2252,13 @@ async function playFrom(startSentIdx) {
   if (!isStopped && mySession === playSession) {
     if (sleepEndChapter) { stopReading(); sleepEndChapter = false; return; }
     if (currentChapter < chapters.length - 1) {
+      showToast(`Ch${currentChapter}→${currentChapter+1} stopped:${isStopped} sess:${mySession===playSession}`, 8000);
       document.getElementById('chi-'+currentChapter)?.classList.add('done');
       document.getElementById('dch-'+currentChapter)?.classList.add('done');
       await loadChapter(currentChapter + 1);
+      showToast(`loaded ch${currentChapter} sents:${sentences.length} stopped:${isStopped} sess:${mySession===playSession}`, 8000);
       if (!isStopped && mySession === playSession) playFrom(0);
+      else showToast(`BLOCKED isStopped:${isStopped} my:${mySession} play:${playSession}`, 8000);
     } else {
       stopReading(); clearSavedPos();
       document.getElementById('play-btn').textContent = '▶';
@@ -3983,10 +3986,10 @@ async function gdriveRestoreOnLoad() {
   }
 }
 
-function showToast(msg) {
+function showToast(msg, duration) {
   const t = document.getElementById('sync-toast');
   t.textContent = msg; t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
+  setTimeout(() => t.classList.remove('show'), duration || 2500);
 }
 
 // Drive init handled in DOMContentLoaded above
@@ -4032,4 +4035,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.1.0 | built 2026-06-07 01:05 -->
+<!-- Bookvoice v3.1.2d | built 2026-06-07 01:20 -->
