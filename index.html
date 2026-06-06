@@ -1232,39 +1232,64 @@ function splitChunks(text,maxLen) {
 let chapterTranslated = {}; // key: "mode:chapterIdx" → array of {orig, translated} per block
 let bgTranslateController = null; // AbortController for background translation
 
+// Pre-render a chapter into a hidden div — called ahead of time
+async function loadChapterInto(i, targetDiv) {
+  if (langMode !== 'orig') {
+    await loadChapterTranslated(i, targetDiv);
+  } else {
+    targetDiv.innerHTML = chapters[i].html;
+  }
+}
+
 async function loadChapter(i) {
-  currentChapter=i; sentenceIndex=0;
+  currentChapter = i; sentenceIndex = 0;
   userScrolled = false;
   if (userScrollTimer) { clearTimeout(userScrollTimer); userScrollTimer = null; }
   setSidebarActive(i);
-  const body=document.getElementById('reader-body');
+  const body = document.getElementById('reader-body');
   const scroller = document.getElementById('reader-scroll');
-  document.getElementById('now-ch').textContent=chapters[i].title;
-  const pct=chapters.length>1?(i/(chapters.length-1))*100:0;
-  document.getElementById('prog-fill').style.width=pct+'%';
-  document.getElementById('prog-time').textContent='Ch '+(i+1)+' / '+chapters.length;
+  document.getElementById('now-ch').textContent = chapters[i].title;
+  const pct = chapters.length > 1 ? (i / (chapters.length - 1)) * 100 : 0;
+  document.getElementById('prog-fill').style.width = pct + '%';
+  document.getElementById('prog-time').textContent = 'Ch ' + (i + 1) + ' / ' + chapters.length;
 
-  if (langMode !== 'orig') {
-    await loadChapterTranslated(i, body);
-  } else {
-    body.innerHTML = chapters[i].html;
+  // Check if chapter was pre-rendered into a hidden div
+  const preDiv = document.getElementById('prerender-ch-' + i);
+  if (preDiv && preDiv.innerHTML.trim()) {
+    // Swap pre-rendered content instantly
+    body.innerHTML = preDiv.innerHTML;
+    preDiv.remove();
     clearHighlight();
     wrapSentences(body);
     updateMSChapter();
     updateSentCounter();
+  } else {
+    // Not pre-rendered — load normally
+    if (langMode !== 'orig') {
+      await loadChapterTranslated(i, body);
+    } else {
+      body.innerHTML = chapters[i].html;
+      clearHighlight();
+      wrapSentences(body);
+      updateMSChapter();
+      updateSentCounter();
+    }
   }
 
-  // Scroll to top after content renders
+  // Clean up any stale pre-render divs
+  document.querySelectorAll('[id^="prerender-ch-"]').forEach(el => {
+    if (el.id !== 'prerender-ch-' + (i + 1)) el.remove();
+  });
+
+  // Scroll to top after render
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   isProgrammaticScroll = true;
   scroller.style.scrollBehavior = 'auto';
   scroller.scrollTop = 0;
   setTimeout(() => { scroller.style.scrollBehavior = ''; isProgrammaticScroll = false; }, 100);
 
-  // Background: preload next chapters quietly
-  if (langMode !== 'orig') {
-    startBgTranslate(i + 1);
-  }
+  // Background preload next chapters
+  if (langMode !== 'orig') startBgTranslate(i + 1);
 }
 
 async function loadChapterTranslated(chIdx, body) {
@@ -2074,6 +2099,16 @@ async function playFrom(startSentIdx) {
   buildParagraphs();
   setStatus('speaking');
 
+  // Wait for sentences to be available (may be loading/translating)
+  let waited = 0;
+  while (sentences.length === 0 && waited < 10000) {
+    await new Promise(r => setTimeout(r, 200));
+    waited += 200;
+    buildParagraphs();
+    if (isStopped || mySession !== playSession) return;
+  }
+  if (sentences.length === 0) return; // gave up
+
   let pIdx = findParagraphForSentence(startSentIdx);
   const audio = getBgAudio();
 
@@ -2183,15 +2218,15 @@ async function playFrom(startSentIdx) {
     startSentIdx = 0;
     pIdx++;
 
-    // Preload next chapter translation when on last paragraph
-    if (pIdx >= paragraphs.length - 1 && langMode !== 'orig' && currentChapter < chapters.length - 1) {
+    // When on last 2 paragraphs — preload next chapter in background
+    if (pIdx >= paragraphs.length - 2 && currentChapter < chapters.length - 1) {
       const nextCi = currentChapter + 1;
-      const nextKey = langMode + ':' + nextCi;
-      const isNextCached = chapterTranslated[nextKey] &&
-        chapterTranslated[nextKey].every(b => b.translated !== null || !b.orig);
-      if (!isNextCached) {
-        // Start translating next chapter in background now
-        startBgTranslate(nextCi);
+      if (!document.getElementById('prerender-ch-' + nextCi)) {
+        const preDiv = document.createElement('div');
+        preDiv.id = 'prerender-ch-' + nextCi;
+        preDiv.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;top:-9999px';
+        document.body.appendChild(preDiv);
+        loadChapterInto(nextCi, preDiv).catch(() => {});
       }
     }
 
@@ -3997,4 +4032,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.0.7 | built 2026-06-07 00:30 -->
+<!-- Bookvoice v3.1.0 | built 2026-06-07 01:05 -->
