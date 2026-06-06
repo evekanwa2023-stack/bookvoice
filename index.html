@@ -1291,7 +1291,6 @@ async function loadChapterTranslated(chIdx, body) {
   const total = blockEls.length || 1;
   const blocks = blockEls.map(el => ({ orig: (el.innerText || el.textContent || '').trim(), tag: el.tagName.toLowerCase(), translated: null }));
 
-  // Show progress bar in reader body while translating
   body.innerHTML = `
     <div id="ch-translate-progress" style="padding:40px 0 20px;text-align:center">
       <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Translating paragraph <span id="ch-tr-done">0</span> / ${total}</div>
@@ -1301,49 +1300,75 @@ async function loadChapterTranslated(chIdx, body) {
     </div>`;
   chapterTranslated[cacheKey] = blocks;
 
-  // Status in now-label
   const indicator = document.getElementById('lang-indicator');
   if (indicator) indicator.textContent = `🌐 0/${total}`;
 
   const BATCH = 20;
   const tgt = {'th':'th','en':'en','zh':'zh-CN','zh-en':'en','zh-th':'th','zh-en-th':'th'}[langMode] || 'th';
-  for (let i = 0; i < blocks.length; i += BATCH) {
-    if (currentChapter !== chIdx) return;
-    const chunk = blocks.slice(i, Math.min(i + BATCH, blocks.length));
-    const origs = chunk.map(b => b.orig || ' ');
-    try {
-      const translated = await translateBatch(origs, tgt);
-      chunk.forEach((b, j) => { b.translated = translated[j] || b.orig; });
-    } catch(e) { chunk.forEach(b => { b.translated = b.orig; }); }
-    if (langMode === 'zh-en-th') {
-      try {
-        const thResults = await translateBatch(chunk.map(b => b.translated || b.orig || ' '), 'th');
-        chunk.forEach((b, j) => { b.translated = thResults[j] || b.translated; });
-      } catch(e) {}
-    }
-    const done = Math.min(i + BATCH, blocks.length);
-    if (i === 0) {
-      const prog = document.getElementById('ch-translate-progress');
-      if (prog) prog.remove();
-      body.innerHTML = '';
-    }
-    for (const block of chunk) {
-      if (!block.orig) continue;
-      const el = document.createElement(block.tag || 'p');
-      el.textContent = block.translated || block.orig;
-      body.appendChild(el);
-    }
-    if (indicator) indicator.textContent = `🌐 ${done}/${total}`;
-    await new Promise(r => setTimeout(r, 100));
-  }
 
-  // Final re-wrap once ALL blocks are translated
-  if (currentChapter === chIdx) {
-    const freshBody = document.getElementById('reader-body');
-    clearHighlight();
-    wrapSentences(freshBody);
-    updateMSChapter();
-    updateSentCounter();
+  // Translate first batch and return — so reading can start immediately
+  const firstChunk = blocks.slice(0, BATCH);
+  try {
+    const translated = await translateBatch(firstChunk.map(b => b.orig || ' '), tgt);
+    firstChunk.forEach((b, j) => { b.translated = translated[j] || b.orig; });
+    if (langMode === 'zh-en-th') {
+      const thResults = await translateBatch(firstChunk.map(b => b.translated || b.orig || ' '), 'th');
+      firstChunk.forEach((b, j) => { b.translated = thResults[j] || b.translated; });
+    }
+  } catch(e) { firstChunk.forEach(b => { b.translated = b.orig; }); }
+
+  if (currentChapter !== chIdx) return;
+
+  // Render first batch and wrap sentences — caller can start reading now
+  const prog = document.getElementById('ch-translate-progress');
+  if (prog) prog.remove();
+  body.innerHTML = '';
+  for (const block of firstChunk) {
+    if (!block.orig) continue;
+    const el = document.createElement(block.tag || 'p');
+    el.textContent = block.translated || block.orig;
+    body.appendChild(el);
+  }
+  clearHighlight();
+  wrapSentences(body);
+  updateMSChapter();
+  updateSentCounter();
+  if (indicator) indicator.textContent = `🌐 ${Math.min(BATCH, total)}/${total}`;
+
+  // Continue remaining batches in background — append as they complete
+  if (blocks.length > BATCH) {
+    (async () => {
+      for (let i = BATCH; i < blocks.length; i += BATCH) {
+        if (currentChapter !== chIdx) return;
+        const chunk = blocks.slice(i, Math.min(i + BATCH, blocks.length));
+        try {
+          const translated = await translateBatch(chunk.map(b => b.orig || ' '), tgt);
+          chunk.forEach((b, j) => { b.translated = translated[j] || b.orig; });
+          if (langMode === 'zh-en-th') {
+            const thResults = await translateBatch(chunk.map(b => b.translated || b.orig || ' '), 'th');
+            chunk.forEach((b, j) => { b.translated = thResults[j] || b.translated; });
+          }
+        } catch(e) { chunk.forEach(b => { b.translated = b.orig; }); }
+        if (currentChapter !== chIdx) return;
+        const freshBody = document.getElementById('reader-body');
+        for (const block of chunk) {
+          if (!block.orig) continue;
+          const el = document.createElement(block.tag || 'p');
+          el.textContent = block.translated || block.orig;
+          freshBody.appendChild(el);
+        }
+        const done = Math.min(i + BATCH, blocks.length);
+        if (indicator) indicator.textContent = `🌐 ${done}/${total}`;
+        // Re-wrap to include new sentences (won't disturb playing ones)
+        wrapSentences(freshBody);
+        updateSentCounter();
+        await new Promise(r => setTimeout(r, 100));
+      }
+      if (currentChapter === chIdx && indicator) {
+        indicator.textContent = '🌐 ' + (LANG_LABELS[langMode] || langMode.toUpperCase());
+      }
+    })();
+  } else {
     if (indicator) indicator.textContent = '🌐 ' + (LANG_LABELS[langMode] || langMode.toUpperCase());
   }
 }
@@ -3972,4 +3997,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.0.6 | built 2026-06-07 00:10 -->
+<!-- Bookvoice v3.0.7 | built 2026-06-07 00:30 -->
