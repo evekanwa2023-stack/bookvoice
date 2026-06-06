@@ -2136,8 +2136,10 @@ async function playFrom(startSentIdx) {
       const onErr = () => { audio.removeEventListener('error', onErr); resolve(); };
       audio.addEventListener('ended', onEnd);
       audio.addEventListener('error', onErr);
-      // Safety timeout
-      const safety = setTimeout(resolve, (audio.duration || 30) * 1000 + 2000);
+      // Safety timeout — minimum 15s in case duration is 0 or unknown
+      const dur = (audio.duration && !isNaN(audio.duration) && audio.duration > 1)
+        ? audio.duration : 30;
+      const safety = setTimeout(resolve, Math.max(15000, dur * 1000 + 3000));
       // Store so we can cancel if stopped
       currentAudio._safetyTimer = safety;
     });
@@ -2179,7 +2181,11 @@ async function playFrom(startSentIdx) {
         nextNextBlobPromise = pIdx+2 < paragraphs.length
           ? fetchAudioBlob(paragraphs[pIdx+2].text)
           : null;
-      } catch(e) { pIdx++; continue; }
+      } catch(e) {
+        // Retry once before skipping
+        try { currentBlobUrl = await fetchAudioBlob(paragraphs[pIdx]?.text || ''); }
+        catch(e2) { pIdx++; continue; }
+      }
     }
   }
 
@@ -2189,13 +2195,11 @@ async function playFrom(startSentIdx) {
       document.getElementById('chi-'+currentChapter)?.classList.add('done');
       document.getElementById('dch-'+currentChapter)?.classList.add('done');
       const nextCi = currentChapter + 1;
-      // Check if next chapter already translated — if so, load instantly
-      const nextKey = langMode + ':' + nextCi;
-      const isNextReady = langMode === 'orig' ||
-        (chapterTranslated[nextKey] && chapterTranslated[nextKey].every(b => b.translated !== null || !b.orig));
-      await loadChapter(nextCi);
-      await new Promise(r => setTimeout(r, isNextReady ? 30 : 80));
-      if (!isStopped && mySession === playSession) playFrom(0);
+      // Start loading chapter but don't await full translation
+      // playFrom will wait for sentences to be available via wrapSentences
+      loadChapter(nextCi).then(() => {
+        if (!isStopped && mySession === playSession) playFrom(0);
+      });
     } else {
       stopReading(); clearSavedPos();
       document.getElementById('play-btn').textContent = '▶';
@@ -3972,4 +3976,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.0.4 | built 2026-06-05 16:30 -->
+<!-- Bookvoice v3.0.5 | built 2026-06-07 00:00 -->
