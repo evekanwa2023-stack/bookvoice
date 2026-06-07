@@ -236,7 +236,7 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
 <body>
 <div class="loading-bar" id="loading-bar"></div>
 <!-- iOS background audio: persistent audio element -->
-<audio id="bg-audio" playsinline webkit-playsinline style="display:none"></audio>
+<audio id="bg-audio" playsinline webkit-playsinline x-webkit-airplay="allow" style="display:none"></audio>
 <div class="sync-toast" id="sync-toast"></div>
 <div class="drive-reconnect-bar" id="drive-reconnect-bar"><span>☁️ Google Drive disconnected — tap to reconnect</span><button onclick="tapReconnectDrive()">Reconnect</button></div>
 
@@ -765,7 +765,34 @@ async function requestWakeLock() {
 }
 function releaseWakeLock() { if (wakeLock) { wakeLock.release(); wakeLock = null; } }
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible' && isPlaying) await requestWakeLock();
+  if (document.visibilityState === 'visible') {
+    if (isPlaying) await requestWakeLock();
+    if (isPlaying && !isStopped && bgAudio) {
+      // If audio ended while backgrounded, it will naturally resolve the promise
+      // If it's paused (iOS suspended), resume it
+      if (bgAudio.paused && bgAudio.src && bgAudio.readyState >= 2) {
+        try { await bgAudio.play(); } catch(e) {}
+      }
+      // If audio src is empty (somehow lost), restart from current sentence
+      if (!bgAudio.src || bgAudio.src === window.location.href) {
+        stopAudio();
+        setTimeout(() => {
+          if (!isStopped) {
+            isPlaying = true;
+            isStopped = false;
+            document.getElementById('play-btn').textContent = '⏸';
+            playFrom(sentenceIndex);
+          }
+        }, 300);
+      }
+    }
+  }
+});
+
+window.addEventListener('pageshow', async () => {
+  if (isPlaying && !isStopped && bgAudio && bgAudio.paused) {
+    try { await bgAudio.play(); } catch(e) {}
+  }
 });
 
 // ── MEDIA SESSION ──
@@ -1751,6 +1778,8 @@ function setRuleScope(scope) {
 
 function applyPronunciation(text) {
   let t = text;
+  // Strip footnote markers: [1], [2], (1), etc.
+  t = t.replace(/\s*\[\d+\]/g, '').replace(/\s*\(\d+\)/g, '');
   const active = pronounceRules.filter(r => r.scope === 'global' || r.book === bookTitle);
   for (const rule of active) {
     if (!rule.find) continue;
@@ -4032,4 +4061,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.1.4 | built 2026-06-07 02:10 -->
+<!-- Bookvoice v3.1.6 | built 2026-06-07 15:00 -->
