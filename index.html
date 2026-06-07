@@ -3001,7 +3001,9 @@ let reconnectCheckInterval = null;
 
 function startReconnectChecker() {
   if (reconnectCheckInterval) return;
-  reconnectCheckInterval = setInterval(checkDriveTokenExpiry, 60000); // check every minute
+  reconnectCheckInterval = setInterval(checkDriveTokenExpiry, 5 * 60000); // check every 5 minutes
+  // Also check immediately on start
+  setTimeout(checkDriveTokenExpiry, 3000);
 }
 
 function checkDriveTokenExpiry() {
@@ -3009,9 +3011,11 @@ function checkDriveTokenExpiry() {
   const bar = document.getElementById('drive-reconnect-bar');
   if (!bar) return;
   if (!isTokenValid()) {
-    // Token expired — show banner
+    // Token expired — show banner and try silent reauth
     bar.style.display = 'flex';
-    // Try silent reauth first
+    attemptSilentAuth();
+  } else if (shouldPreRefresh()) {
+    // Token expiring soon — silently refresh before it expires
     attemptSilentAuth();
   } else {
     bar.style.display = 'none';
@@ -3875,6 +3879,11 @@ function isTokenValid() {
   return gdriveToken && Date.now() < gdriveExpiry - 60000;
 }
 
+function shouldPreRefresh() {
+  // Return true if token expires within 10 minutes — refresh proactively
+  return gdriveToken && gdriveExpiry > 0 && Date.now() > gdriveExpiry - 10 * 60000;
+}
+
 async function toggleGDrive() {
   if (gdriveEnabled && isTokenValid()) {
     // Disconnect
@@ -4123,4 +4132,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.2.0 | built 2026-06-07 20:30 -->
+<!-- Bookvoice v3.2.1 | built 2026-06-07 20:40 -->
