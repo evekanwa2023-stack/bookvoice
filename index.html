@@ -1953,6 +1953,7 @@ function nextSentence() {
 
 let bgAudio = null; // single persistent audio element
 let pendingBlob = null; // next blob URL ready to swap in
+let nextChapterFirstAudioCache = null; // { chapter:number, promise:Promise<string> } for seamless auto-next
 let highlightTimers = [];
 
 function getBgAudio() {
@@ -1961,6 +1962,43 @@ function getBgAudio() {
     bgAudio.preload = 'auto';
   }
   return bgAudio;
+}
+
+function sleepMs(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function safePlayAudio(audio, sessionId) {
+  // No "tap to continue" UI. Just retry quietly so chapter transitions can continue when allowed.
+  for (let attempt = 0; attempt < 8; attempt++) {
+    if (isStopped || sessionId !== playSession) return false;
+    try {
+      await audio.play();
+      return true;
+    } catch(e) {
+      await sleepMs(120 + attempt * 180);
+    }
+  }
+  return false;
+}
+
+function firstReadableTextFromElement(root) {
+  if (!root) return '';
+  const parts = [];
+  root.querySelectorAll('h1,h2,h3,p,div').forEach(el => {
+    const t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (t.length >= 8 && !parts.includes(t)) parts.push(t);
+  });
+  return parts.slice(0, 2).join(' ').slice(0, 1800);
+}
+
+async function prewarmNextChapterAudio(chIdx, preDiv) {
+  try {
+    if (chIdx >= chapters.length) return;
+    const txt = firstReadableTextFromElement(preDiv);
+    if (!txt) return;
+    nextChapterFirstAudioCache = { chapter: chIdx, promise: fetchAudioBlob(txt) };
+  } catch(e) {}
 }
 
 // ── LANGUAGE / TRANSLATION MODE ──
@@ -2183,10 +2221,15 @@ async function playFrom(startSentIdx) {
     firstParaText = firstPara?.text || '';
   }
 
-  // Fetch first blob
+  // Fetch first blob. If this is the first paragraph of a prewarmed next chapter, reuse it.
   let currentBlobUrl = null;
   try {
-    currentBlobUrl = await fetchAudioBlob(firstParaText);
+    if (startSentIdx === 0 && nextChapterFirstAudioCache && nextChapterFirstAudioCache.chapter === currentChapter) {
+      currentBlobUrl = await nextChapterFirstAudioCache.promise;
+      nextChapterFirstAudioCache = null;
+    } else {
+      currentBlobUrl = await fetchAudioBlob(firstParaText);
+    }
   } catch(e) { return; }
 
   if (isStopped || mySession !== playSession) {
@@ -2235,8 +2278,13 @@ async function playFrom(startSentIdx) {
     const estDuration = (effectivePara.text.split(/\s+/).length / (speed * 2.5)) * 1000;
     scheduleHighlights(effectivePara, firstSent, estDuration);
 
-    // Actually play
-    try { await audio.play(); } catch(e) {}
+    // Actually play. If browser refuses autoplay, do not fake progress or skip silently.
+    const played = await safePlayAudio(audio, mySession);
+    if (!played) {
+      clearHighlightTimers();
+      setStatus('paused');
+      return;
+    }
 
     // Refine highlights once we know real duration
     if (audio.duration && !isNaN(audio.duration)) {
@@ -2284,7 +2332,9 @@ async function playFrom(startSentIdx) {
         preDiv.id = 'prerender-ch-' + nextCi;
         preDiv.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;top:-9999px';
         document.body.appendChild(preDiv);
-        loadChapterInto(nextCi, preDiv).catch(() => {});
+        loadChapterInto(nextCi, preDiv)
+          .then(() => prewarmNextChapterAudio(nextCi, preDiv))
+          .catch(() => {});
       }
     }
 
