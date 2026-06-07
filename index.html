@@ -286,7 +286,16 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
           </div>
           <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">Export saves to iCloud Drive. Import to restore on any device.</p>
         </div>
-        <button onclick="closeSheet('lib-options-sheet');showSetup()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">🔌 Change Server URL</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:14px;color:var(--text)">🔌 Server</span>
+            <span id="lib-server-status-badge" style="font-size:11px;color:var(--muted)">—</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn ghost" style="font-size:12px;padding:6px 12px" onclick="showServerStatusLib()">Check</button>
+            <button class="btn ghost" style="font-size:12px;padding:6px 12px" onclick="closeSheet('lib-options-sheet');showSetup()">Change</button>
+          </div>
+        </div>
         <button onclick="closeSheet('lib-options-sheet');openSheet('stats-sheet');renderStats()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:var(--text);font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">📊 Reading Stats</button>
         <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)">
           <span style="font-size:14px;color:var(--text)">☁️ Google Drive</span>
@@ -2507,17 +2516,36 @@ function updateServerBadge() {
 
 function showServerStatus() {
   if (!serverUrl) { showToast('No server connected'); return; }
-  const t = getServerUptime();
-  fetch(serverUrl + '/ping', { signal: AbortSignal.timeout(5000) })
+  const badge = document.getElementById('server-status-badge');
+  if (badge) { badge.textContent = 'Checking...'; badge.style.color = 'var(--muted)'; }
+  fetch(serverUrl + '/status', { signal: AbortSignal.timeout(5000) })
     .then(r => r.json())
     .then(d => {
-      if (d.ok) {
-        let msg = '✓ Server online';
-        if (t) msg += '\nRunning: ' + t.elapsedStr + '\nEst. remaining: ' + t.remainStr;
-        showToast('✓ Server is online');
-      } else throw new Error();
+      const text = d.remaining_str ? '✓ ' + d.remaining_str + ' left' : '✓ Online';
+      if (badge) { badge.textContent = text; badge.style.color = 'var(--green)'; }
+      if (d.remaining_seconds < 10 * 60) showToast('⚠ Only ' + d.remaining_str + ' left!');
     })
-    .catch(() => { showToast('✗ Server offline — get new Colab URL'); });
+    .catch(() => {
+      if (badge) { badge.textContent = '✗ Offline'; badge.style.color = '#e07070'; }
+      showToast('✗ Server offline — get new Colab URL');
+    });
+}
+
+function showServerStatusLib() {
+  if (!serverUrl) { showToast('No server connected'); return; }
+  const badge = document.getElementById('lib-server-status-badge');
+  if (badge) { badge.textContent = 'Checking...'; badge.style.color = 'var(--muted)'; }
+  fetch(serverUrl + '/status', { signal: AbortSignal.timeout(5000) })
+    .then(r => r.json())
+    .then(d => {
+      const text = d.remaining_str ? '✓ ' + d.remaining_str + ' left' : '✓ Online';
+      if (badge) { badge.textContent = text; badge.style.color = 'var(--green)'; }
+      if (d.remaining_seconds < 10 * 60) showToast('⚠ Only ' + d.remaining_str + ' left!');
+    })
+    .catch(() => {
+      if (badge) { badge.textContent = '✗ Offline'; badge.style.color = '#e07070'; }
+      showToast('✗ Server offline — get new Colab URL');
+    });
 }
 
 // Update badge whenever more sheet opens
@@ -2640,6 +2668,20 @@ window.openSheet = function(id) {
   _libOptOpen(id);
   if (id === 'lib-options-sheet') {
     const li = document.getElementById('lib-speed-input'); if (li) li.value = speed.toFixed(2);
+    // Auto-check server status
+    if (serverUrl) {
+      const badge = document.getElementById('lib-server-status-badge');
+      if (badge) { badge.textContent = 'Checking...'; badge.style.color = 'var(--muted)'; }
+      fetch(serverUrl + '/status', { signal: AbortSignal.timeout(5000) })
+        .then(r => r.json())
+        .then(d => {
+          if (badge) { badge.textContent = d.remaining_str ? '✓ ' + d.remaining_str + ' left' : '✓ Online'; badge.style.color = 'var(--green)'; }
+        })
+        .catch(() => { if (badge) { badge.textContent = '✗ Offline'; badge.style.color = '#e07070'; } });
+    } else {
+      const badge = document.getElementById('lib-server-status-badge');
+      if (badge) { badge.textContent = 'No server set'; badge.style.color = 'var(--muted)'; }
+    }
   }
 };
 
@@ -4081,4 +4123,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.1.9 | built 2026-06-07 20:20 -->
+<!-- Bookvoice v3.2.0 | built 2026-06-07 20:30 -->
