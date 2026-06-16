@@ -1953,7 +1953,6 @@ function nextSentence() {
 
 let bgAudio = null; // single persistent audio element
 let pendingBlob = null; // next blob URL ready to swap in
-let nextChapterFirstAudioCache = null; // { chapter:number, promise:Promise<string> } for seamless auto-next
 let highlightTimers = [];
 
 function getBgAudio() {
@@ -1962,43 +1961,6 @@ function getBgAudio() {
     bgAudio.preload = 'auto';
   }
   return bgAudio;
-}
-
-function sleepMs(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function safePlayAudio(audio, sessionId) {
-  // No "tap to continue" UI. Just retry quietly so chapter transitions can continue when allowed.
-  for (let attempt = 0; attempt < 8; attempt++) {
-    if (isStopped || sessionId !== playSession) return false;
-    try {
-      await audio.play();
-      return true;
-    } catch(e) {
-      await sleepMs(120 + attempt * 180);
-    }
-  }
-  return false;
-}
-
-function firstReadableTextFromElement(root) {
-  if (!root) return '';
-  const parts = [];
-  root.querySelectorAll('h1,h2,h3,p,div').forEach(el => {
-    const t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
-    if (t.length >= 8 && !parts.includes(t)) parts.push(t);
-  });
-  return parts.slice(0, 2).join(' ').slice(0, 1800);
-}
-
-async function prewarmNextChapterAudio(chIdx, preDiv) {
-  try {
-    if (chIdx >= chapters.length) return;
-    const txt = firstReadableTextFromElement(preDiv);
-    if (!txt) return;
-    nextChapterFirstAudioCache = { chapter: chIdx, promise: fetchAudioBlob(txt) };
-  } catch(e) {}
 }
 
 // ── LANGUAGE / TRANSLATION MODE ──
@@ -2148,16 +2110,25 @@ async function translateBlocksBatch(blocks, BATCH = 20) {
   }
 }
 
-async function fetchAudioBlob(text) {
+async function fetchAudioBlob(text, retries = 1) {
   // Text on screen is already translated — just apply rules and pick voice
   const finalText = applyPronunciation(text);
   const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
   const params = { text: finalText, speed, voice };
   const url = `${serverUrl}/tts?` + new URLSearchParams(params);
-  const r = await fetch(url);
-  if (!r.ok) throw new Error('TTS fetch failed');
-  const blob = await r.blob();
-  return URL.createObjectURL(blob);
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
+      if (!r.ok) throw new Error('TTS fetch failed: ' + r.status);
+      const blob = await r.blob();
+      if (blob.size < 100) throw new Error('Empty audio blob');
+      return URL.createObjectURL(blob);
+    } catch(e) {
+      if (attempt === retries) throw e;
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
 }
 
 function clearHighlightTimers() {
@@ -2221,15 +2192,10 @@ async function playFrom(startSentIdx) {
     firstParaText = firstPara?.text || '';
   }
 
-  // Fetch first blob. If this is the first paragraph of a prewarmed next chapter, reuse it.
+  // Fetch first blob
   let currentBlobUrl = null;
   try {
-    if (startSentIdx === 0 && nextChapterFirstAudioCache && nextChapterFirstAudioCache.chapter === currentChapter) {
-      currentBlobUrl = await nextChapterFirstAudioCache.promise;
-      nextChapterFirstAudioCache = null;
-    } else {
-      currentBlobUrl = await fetchAudioBlob(firstParaText);
-    }
+    currentBlobUrl = await fetchAudioBlob(firstParaText);
   } catch(e) { return; }
 
   if (isStopped || mySession !== playSession) {
@@ -2278,13 +2244,8 @@ async function playFrom(startSentIdx) {
     const estDuration = (effectivePara.text.split(/\s+/).length / (speed * 2.5)) * 1000;
     scheduleHighlights(effectivePara, firstSent, estDuration);
 
-    // Actually play. If browser refuses autoplay, do not fake progress or skip silently.
-    const played = await safePlayAudio(audio, mySession);
-    if (!played) {
-      clearHighlightTimers();
-      setStatus('paused');
-      return;
-    }
+    // Actually play
+    try { await audio.play(); } catch(e) {}
 
     // Refine highlights once we know real duration
     if (audio.duration && !isNaN(audio.duration)) {
@@ -2332,9 +2293,7 @@ async function playFrom(startSentIdx) {
         preDiv.id = 'prerender-ch-' + nextCi;
         preDiv.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;top:-9999px';
         document.body.appendChild(preDiv);
-        loadChapterInto(nextCi, preDiv)
-          .then(() => prewarmNextChapterAudio(nextCi, preDiv))
-          .catch(() => {});
+        loadChapterInto(nextCi, preDiv).catch(() => {});
       }
     }
 
@@ -4182,4 +4141,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.2.1 | built 2026-06-07 20:40 -->
+<!-- Bookvoice v3.2.2 | built 2026-06-07 21:00 -->
