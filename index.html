@@ -2139,12 +2139,13 @@ function clearHighlightTimers() {
 function scheduleHighlights(para, firstSentIdx, duration) {
   clearHighlightTimers();
   const sentGroup = sentences.slice(para.startIdx, para.startIdx + para.count);
-  const wordCounts = sentGroup.map(s => s.split(/\s+/).length);
-  const totalWords = wordCounts.reduce((a,b) => a+b, 0) || 1;
+  // Character count is a closer proxy for spoken duration than word count
+  const charCounts = sentGroup.map(s => Math.max(s.length, 1));
+  const totalChars = charCounts.reduce((a,b) => a+b, 0) || 1;
   let elapsed = 0;
   sentGroup.forEach((_, j) => {
     const sIdx = para.startIdx + j;
-    if (sIdx < firstSentIdx) { elapsed += (wordCounts[j]/totalWords)*duration; return; }
+    if (sIdx < firstSentIdx) { elapsed += (charCounts[j]/totalChars)*duration; return; }
     const t = setTimeout(() => {
       if (isStopped) return;
       sentenceIndex = sIdx;
@@ -2153,7 +2154,7 @@ function scheduleHighlights(para, firstSentIdx, duration) {
       savePosition();
     }, elapsed);
     highlightTimers.push(t);
-    elapsed += (wordCounts[j]/totalWords)*duration;
+    elapsed += (charCounts[j]/totalChars)*duration;
   });
 }
 
@@ -2366,7 +2367,7 @@ function highlightSentence(i){
   sentenceEls.forEach(el=>el.classList.remove('reading'));
   const el=sentenceEls[i]; if(!el) return;
   el.classList.add('reading');
-  if (!userScrolled) el.scrollIntoView({block:'center',behavior:'smooth'});
+  if (!userScrolled) scrollToSentence(el);
   updateSentCounter();
   trackSentenceRead();
 }
@@ -4141,4 +4142,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.2.2 | built 2026-06-07 21:00 -->
+<!-- Bookvoice v3.2.4 | built 2026-06-07 21:20 -->
