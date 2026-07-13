@@ -1299,6 +1299,7 @@ async function loadChapterInto(i, targetDiv) {
 
 async function loadChapter(i) {
   currentChapter = i; sentenceIndex = 0;
+  pruneAudioCache(i); // drop cached audio from other chapters, keep this one's
   userScrolled = false;
   if (userScrollTimer) { clearTimeout(userScrollTimer); userScrollTimer = null; }
   setSidebarActive(i);
@@ -1346,6 +1347,9 @@ async function loadChapter(i) {
 
   // Background preload next chapters
   if (langMode !== 'orig') startBgTranslate(i + 1);
+
+  // Background preload this chapter's audio so any tap/skip is instant
+  preloadChapterAudio(i).catch(() => {});
 }
 
 async function loadChapterTranslated(chIdx, body) {
@@ -1953,6 +1957,7 @@ function nextSentence() {
 
 let bgAudio = null; // single persistent audio element
 let pendingBlob = null; // next blob URL ready to swap in
+let nextChapterFirstAudioCache = null; // { chapter:number, promise:Promise<string> } for seamless auto-next
 let highlightTimers = [];
 
 function getBgAudio() {
@@ -1961,6 +1966,43 @@ function getBgAudio() {
     bgAudio.preload = 'auto';
   }
   return bgAudio;
+}
+
+function sleepMs(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function safePlayAudio(audio, sessionId) {
+  // No "tap to continue" UI. Just retry quietly so chapter transitions can continue when allowed.
+  for (let attempt = 0; attempt < 8; attempt++) {
+    if (isStopped || sessionId !== playSession) return false;
+    try {
+      await audio.play();
+      return true;
+    } catch(e) {
+      await sleepMs(120 + attempt * 180);
+    }
+  }
+  return false;
+}
+
+function firstReadableTextFromElement(root) {
+  if (!root) return '';
+  const parts = [];
+  root.querySelectorAll('h1,h2,h3,p,div').forEach(el => {
+    const t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (t.length >= 8 && !parts.includes(t)) parts.push(t);
+  });
+  return parts.slice(0, 2).join(' ').slice(0, 1800);
+}
+
+async function prewarmNextChapterAudio(chIdx, preDiv) {
+  try {
+    if (chIdx >= chapters.length) return;
+    const txt = firstReadableTextFromElement(preDiv);
+    if (!txt) return;
+    nextChapterFirstAudioCache = { chapter: chIdx, promise: fetchAudioBlob(txt) };
+  } catch(e) {}
 }
 
 // ── LANGUAGE / TRANSLATION MODE ──
@@ -1985,6 +2027,7 @@ function setLangMode(mode) {
   updateVoiceRowVisibility();
   translateCache = {};
   chapterTranslated = {};
+  clearAudioCacheAll(); // voice/text changes with language — old cached audio is stale
   if (bgTranslateController) bgTranslateController.aborted = true;
   const labels = {'orig':'Original','en':'English','th':'Thai','zh':'Chinese','zh-en':'Chinese → English','zh-th':'Chinese → Thai','zh-en-th':'Chinese → English → Thai'};
   showToast('Language: ' + (labels[mode] || mode));
@@ -2111,12 +2154,10 @@ async function translateBlocksBatch(blocks, BATCH = 20) {
 }
 
 async function fetchAudioBlob(text, retries = 1) {
-  // Text on screen is already translated — just apply rules and pick voice
   const finalText = applyPronunciation(text);
   const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
   const params = { text: finalText, speed, voice };
   const url = `${serverUrl}/tts?` + new URLSearchParams(params);
-
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
@@ -2131,6 +2172,78 @@ async function fetchAudioBlob(text, retries = 1) {
   }
 }
 
+// ── PERSISTENT AUDIO CACHE ──
+// Caches fetched paragraph/sentence-entry audio so tapping/skipping to any
+// sentence already fetched (or preloaded) plays instantly, no refetch wait.
+// Key includes everything that changes the audio content, so stale entries
+// simply become unreachable rather than being served incorrectly.
+let audioCache = {};
+let audioPreloadToken = 0;
+
+function audioCacheKey(entrySentIdx) {
+  const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
+  return currentChapter + '|' + langMode + '|' + voice + '|' + speed + '|' + entrySentIdx;
+}
+
+// Reproduces the exact text playFrom() would fetch for a given entry sentence:
+// full paragraph text, unless entrySentIdx lands mid-paragraph (a tap/skip
+// into the middle), in which case it's trimmed to start exactly there.
+function textForEntry(entrySentIdx) {
+  const pIdx = findParagraphForSentence(entrySentIdx);
+  const para = paragraphs[pIdx];
+  if (!para) return '';
+  if (entrySentIdx > para.startIdx) {
+    return sentences.slice(entrySentIdx, para.startIdx + para.count).join(' ');
+  }
+  return para.text;
+}
+
+// Returns a Promise<blobUrl>, fetching only once per key — concurrent/
+// repeated calls for the same entry share the same in-flight request.
+function getCachedAudio(entrySentIdx) {
+  const key = audioCacheKey(entrySentIdx);
+  if (!audioCache[key]) {
+    const text = textForEntry(entrySentIdx);
+    audioCache[key] = fetchAudioBlob(text).catch(e => { delete audioCache[key]; throw e; });
+  }
+  return audioCache[key];
+}
+
+// Drop cached audio for every chapter except the one being kept, revoking
+// blob URLs so we don't leak memory across a long book.
+function pruneAudioCache(keepChapter) {
+  Object.keys(audioCache).forEach(key => {
+    const chIdx = parseInt(key.split('|')[0], 10);
+    if (chIdx !== keepChapter) {
+      const entry = audioCache[key];
+      delete audioCache[key];
+      Promise.resolve(entry).then(url => { try { URL.revokeObjectURL(url); } catch(e){} }).catch(()=>{});
+    }
+  });
+}
+
+// Full clear — used when langMode changes (voice/text baked into the audio changes).
+function clearAudioCacheAll() {
+  Object.values(audioCache).forEach(entry => {
+    Promise.resolve(entry).then(url => { try { URL.revokeObjectURL(url); } catch(e){} }).catch(()=>{});
+  });
+  audioCache = {};
+}
+
+// Background-fill the cache for every paragraph in the chapter so that
+// skipping/tapping anywhere in it never has to wait on a fresh TTS fetch.
+// Throttled with a small gap between requests so it doesn't starve a
+// foreground fetch triggered by the user actually tapping something.
+async function preloadChapterAudio(chIdx) {
+  const myToken = ++audioPreloadToken;
+  buildParagraphs();
+  for (const p of paragraphs) {
+    if (myToken !== audioPreloadToken || chIdx !== currentChapter) return;
+    try { await getCachedAudio(p.startIdx); } catch(e) {}
+    await new Promise(r => setTimeout(r, 60));
+  }
+}
+
 function clearHighlightTimers() {
   highlightTimers.forEach(clearTimeout);
   highlightTimers = [];
@@ -2139,7 +2252,6 @@ function clearHighlightTimers() {
 function scheduleHighlights(para, firstSentIdx, duration) {
   clearHighlightTimers();
   const sentGroup = sentences.slice(para.startIdx, para.startIdx + para.count);
-  // Character count is a closer proxy for spoken duration than word count
   const charCounts = sentGroup.map(s => Math.max(s.length, 1));
   const totalChars = charCounts.reduce((a,b) => a+b, 0) || 1;
   let elapsed = 0;
@@ -2193,27 +2305,34 @@ async function playFrom(startSentIdx) {
     firstParaText = firstPara?.text || '';
   }
 
-  // Fetch first blob
+  // Fetch first blob (cached — instant if already preloaded/visited).
+  // If this is the first paragraph of a prewarmed next chapter, reuse that instead.
   let currentBlobUrl = null;
   try {
-    currentBlobUrl = await fetchAudioBlob(firstParaText);
+    if (startSentIdx === 0 && nextChapterFirstAudioCache && nextChapterFirstAudioCache.chapter === currentChapter) {
+      currentBlobUrl = await nextChapterFirstAudioCache.promise;
+      nextChapterFirstAudioCache = null;
+      audioCache[audioCacheKey(startSentIdx)] = Promise.resolve(currentBlobUrl);
+    } else {
+      currentBlobUrl = await getCachedAudio(startSentIdx);
+    }
   } catch(e) { return; }
 
   if (isStopped || mySession !== playSession) {
-    URL.revokeObjectURL(currentBlobUrl); return;
+    return;
   }
 
-  // Pre-fetch next blob in parallel
+  // Pre-fetch next blob in parallel (cached — persists across taps/skips)
   let nextBlobPromise = pIdx+1 < paragraphs.length
-    ? fetchAudioBlob(paragraphs[pIdx+1].text)
+    ? getCachedAudio(paragraphs[pIdx+1].startIdx)
     : null;
   let nextNextBlobPromise = pIdx+2 < paragraphs.length
-    ? fetchAudioBlob(paragraphs[pIdx+2].text)
+    ? getCachedAudio(paragraphs[pIdx+2].startIdx)
     : null;
 
   while (pIdx < paragraphs.length) {
     if (isStopped || mySession !== playSession) {
-      URL.revokeObjectURL(currentBlobUrl); return;
+      return;
     }
 
     const para = paragraphs[pIdx];
@@ -2238,15 +2357,20 @@ async function playFrom(startSentIdx) {
     });
 
     if (isStopped || mySession !== playSession) {
-      URL.revokeObjectURL(currentBlobUrl); return;
+      return;
     }
 
     // Schedule highlights using duration estimate (words/speed)
     const estDuration = (effectivePara.text.split(/\s+/).length / (speed * 2.5)) * 1000;
     scheduleHighlights(effectivePara, firstSent, estDuration);
 
-    // Actually play
-    try { await audio.play(); } catch(e) {}
+    // Actually play. If browser refuses autoplay, do not fake progress or skip silently.
+    const played = await safePlayAudio(audio, mySession);
+    if (!played) {
+      clearHighlightTimers();
+      setStatus('paused');
+      return;
+    }
 
     // Refine highlights once we know real duration
     if (audio.duration && !isNaN(audio.duration)) {
@@ -2277,7 +2401,6 @@ async function playFrom(startSentIdx) {
     }
 
     clearHighlightTimers();
-    URL.revokeObjectURL(currentBlobUrl);
     currentBlobUrl = null;
 
     if (isStopped || mySession !== playSession) return;
@@ -2294,24 +2417,26 @@ async function playFrom(startSentIdx) {
         preDiv.id = 'prerender-ch-' + nextCi;
         preDiv.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;top:-9999px';
         document.body.appendChild(preDiv);
-        loadChapterInto(nextCi, preDiv).catch(() => {});
+        loadChapterInto(nextCi, preDiv)
+          .then(() => prewarmNextChapterAudio(nextCi, preDiv))
+          .catch(() => {});
       }
     }
 
     if (sleepEndChapter) { stopReading(); sleepEndChapter = false; return; }
 
-    // Get next blob (should already be fetched)
+    // Get next blob (should already be fetched/cached)
     if (pIdx < paragraphs.length) {
       try {
         currentBlobUrl = await nextBlobPromise;
         // Shift the preload queue
         nextBlobPromise = nextNextBlobPromise;
         nextNextBlobPromise = pIdx+2 < paragraphs.length
-          ? fetchAudioBlob(paragraphs[pIdx+2].text)
+          ? getCachedAudio(paragraphs[pIdx+2].startIdx)
           : null;
       } catch(e) {
-        // Retry once before skipping
-        try { currentBlobUrl = await fetchAudioBlob(paragraphs[pIdx]?.text || ''); }
+        // Retry once before skipping (getCachedAudio drops failed entries, so this re-fetches)
+        try { currentBlobUrl = paragraphs[pIdx] ? await getCachedAudio(paragraphs[pIdx].startIdx) : null; }
         catch(e2) { pIdx++; continue; }
       }
     }
@@ -3036,11 +3161,20 @@ async function tapReconnectDrive() {
   const bar = document.getElementById('drive-reconnect-bar');
   if (bar) bar.querySelector('button').textContent = 'Connecting...';
   await signInGDrive();
+  if (!isTokenValid()) {
+    // Google's OAuth popup sometimes only completes account selection on the
+    // first attempt without finishing the token grant (known Identity
+    // Services quirk) — retry once automatically instead of making the user
+    // tap Reconnect a second time themselves.
+    await signInGDrive();
+  }
   if (isTokenValid()) {
     if (bar) bar.style.display = 'none';
     // Push any pending progress
     if (bookTitle) gdriveSavePosition();
     showToast('☁️ Drive reconnected');
+  } else if (bar) {
+    bar.querySelector('button').textContent = 'Reconnect';
   }
 }
 
@@ -4142,4 +4276,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.2.4 | built 2026-06-07 21:20 -->
+<!-- Bookvoice v3.2.5 | built 2026-07-14 -->
