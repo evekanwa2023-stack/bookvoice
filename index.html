@@ -1373,8 +1373,19 @@ async function loadChapter(i) {
     if (el.id !== 'prerender-ch-' + (i + 1)) el.remove();
   });
 
-  // Scroll to top after render
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  // Scroll to top after render.
+  // requestAnimationFrame never fires while the tab is backgrounded (e.g. iOS
+  // Safari with the screen locked or another app in front) — awaiting it
+  // unconditionally used to hang here forever, which silently killed chapter
+  // auto-advance during background playback (loadChapter() never returned,
+  // so the next chapter's playFrom() was never reached). Race it against a
+  // timeout so this always resolves, backgrounded or not.
+  await new Promise(r => {
+    let done = false;
+    const finish = () => { if (done) return; done = true; r(); };
+    requestAnimationFrame(() => requestAnimationFrame(finish));
+    setTimeout(finish, 300);
+  });
   isProgrammaticScroll = true;
   scroller.style.scrollBehavior = 'auto';
   scroller.scrollTop = 0;
@@ -4626,4 +4637,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.1 | built 2026-07-14 -->
+<!-- Bookvoice v3.3.2 | built 2026-07-14 -->
