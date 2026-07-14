@@ -813,7 +813,17 @@ window.addEventListener('DOMContentLoaded', () => {
   updateVoiceRowVisibility();
   if (serverUrl) {
     startConnectionMonitor();
-    if (library.length > 0) { showLibrary(); }
+    // If the user was in the reader (not Library) when they last refreshed,
+    // reopen the same book straight into the reader instead of always
+    // dropping to Library (v3.3.5). Falls back to the old behavior if the
+    // book can't be matched (e.g. it was removed from the library).
+    const lastScreen = localStorage.getItem('bv_screen');
+    const pos = loadSavedPos();
+    const resumeIdx = (lastScreen === 'reader' && pos && pos.book)
+      ? library.findIndex(b => b.title === pos.book)
+      : -1;
+    if (resumeIdx >= 0) { openBookFromLibrary(resumeIdx); }
+    else if (library.length > 0) { showLibrary(); }
     else { showResumeBanner(); showApp(); }
   }
   // Try silent Drive re-auth if previously connected
@@ -904,6 +914,13 @@ function savePosition() {
 }
 function loadSavedPos() { try { return JSON.parse(localStorage.getItem('bv_pos')); } catch { return null; } }
 function clearSavedPos() { localStorage.removeItem('bv_pos'); }
+
+// Tracks which screen the user was actually looking at (reader vs library) so
+// a refresh can put them back where they were instead of always dropping to
+// the Library screen (v3.3.5). Set on every screen transition; checked once
+// on DOMContentLoaded.
+function markReaderScreen(){ localStorage.setItem('bv_screen','reader'); }
+function markLibraryScreen(){ localStorage.setItem('bv_screen','library'); }
 
 // ── SETUP SCREEN ──
 function showResumeBanner() {
@@ -1222,6 +1239,7 @@ async function loadEpub(file) {
     document.getElementById('library-screen').style.display='none';
     document.getElementById('setup-screen').style.display='none';
     document.getElementById('app').style.display='flex';
+    markReaderScreen();
     buildSidebar(); buildDownloadList(); setupMediaSession();
     if (pendingResume && pendingResume.book===bookTitle) {
       loadChapter(pendingResume.chapter);
@@ -1396,6 +1414,11 @@ async function loadChapter(i) {
 
   // Background preload this chapter's audio so any tap/skip is instant
   preloadChapterAudio(i).catch(() => {});
+
+  // Record position even if the user never presses play — otherwise jumping
+  // to a chapter without playing wasn't persisted anywhere, so reopening the
+  // book (or the reader-resume fix below) would drop back to an old chapter.
+  savePosition();
 }
 
 async function loadChapterTranslated(chIdx, body) {
@@ -2586,11 +2609,20 @@ function togglePlay(){ resetHideTimer();
 function prevCh(){const w=isPlaying;stopAudio();if(currentChapter>0){loadChapter(currentChapter-1).then(()=>{if(w){isPlaying=true;document.getElementById('play-btn').textContent='⏸';playFrom(0);}});}  }
 function nextCh(){const w=isPlaying;stopAudio();if(currentChapter<chapters.length-1){loadChapter(currentChapter+1).then(()=>{if(w){isPlaying=true;document.getElementById('play-btn').textContent='⏸';playFrom(0);}});}  }
 
+// Tracks the last time speed/fontSize changed on THIS device. Drive restore
+// (gdriveRestoreOnLoad) uses this to avoid clobbering a setting the user just
+// changed locally with a stale value from an older Drive save (settings are
+// only pushed to Drive periodically, e.g. every 10 sentences — see v3.3.4).
+function markLocalSettingsChanged(){
+  localStorage.setItem('bv_settings_ts', Date.now());
+}
+
 function onSpeed(val){
   speed=Math.min(3.0,Math.max(0.5,parseFloat(val)||1.7));
   const sv=document.getElementById('speed-val'); if(sv) sv.value=speed.toFixed(2);
   const si=document.getElementById('speed-input'); if(si) si.value=speed.toFixed(2);
   localStorage.setItem('tts_speed',speed);
+  markLocalSettingsChanged();
   if(isPlaying){const i=sentenceIndex;stopAudio();setTimeout(()=>{isStopped=false;isPlaying=true;playFrom(i);},50);}
 }
 function applySpeeds(s){
@@ -2605,6 +2637,7 @@ function changeFontSize(delta){
   fontSize=Math.max(12,Math.min(28,fontSize+delta));
   applyFontSize(fontSize);
   localStorage.setItem('tts_fs',fontSize);
+  markLocalSettingsChanged();
 }
 function applyFontSize(sz){
   document.documentElement.style.setProperty('--fs',sz+'px');
@@ -2786,20 +2819,29 @@ function clearAllData() {
 
 function setFontSizeInput(val) {
   const n = parseInt(val);
-  if (n >= 10 && n <= 32) { fontSize = n; applyFontSize(fontSize); localStorage.setItem('tts_fs', fontSize); }
+  if (n >= 10 && n <= 32) { fontSize = n; applyFontSize(fontSize); localStorage.setItem('tts_fs', fontSize); markLocalSettingsChanged(); }
 }
 
 function changeSpeedStep(dir) {
   speed = Math.round(Math.min(3.0, Math.max(0.5, speed + dir * 0.05)) * 100) / 100;
   applySpeeds(speed);
   localStorage.setItem('tts_speed', speed);
+  markLocalSettingsChanged();
   const si = document.getElementById('speed-input'); if (si) si.value = speed.toFixed(2);
   if (isPlaying) { const i=sentenceIndex; stopAudio(); setTimeout(()=>{ isStopped=false; isPlaying=true; playFrom(i); },50); }
 }
 
 function setSpeedInput(val) {
   const n = Math.round(Math.min(3.0, Math.max(0.5, parseFloat(val))) * 100) / 100;
-  if (!isNaN(n)) { speed = n; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
+  if (!isNaN(n)) {
+    speed = n; applySpeeds(speed); localStorage.setItem('tts_speed', speed);
+    markLocalSettingsChanged();
+    // Was missing vs changeSpeedStep() (the +/- buttons) — typing a speed and
+    // confirming it updated the `speed` variable for the *next* sentence, but
+    // didn't restart the currently-playing audio, so it looked like the typed
+    // value "didn't take" compared to the buttons (v3.3.4).
+    if (isPlaying) { const i=sentenceIndex; stopAudio(); setTimeout(()=>{ isStopped=false; isPlaying=true; playFrom(i); },50); }
+  }
 }
 
 function toggleMoreExtra() {
@@ -2837,11 +2879,12 @@ function changeDefaultSpeed(dir) {
   speed = Math.round(Math.min(3.0, Math.max(0.5, speed + dir * 0.05)) * 100) / 100;
   applySpeeds(speed);
   localStorage.setItem('tts_speed', speed);
+  markLocalSettingsChanged();
   const li = document.getElementById('lib-speed-input'); if (li) li.value = speed.toFixed(2);
 }
 function setDefaultSpeed(val) {
   const n = Math.round(Math.min(3.0, Math.max(0.5, parseFloat(val))) * 100) / 100;
-  if (!isNaN(n)) { speed = n; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
+  if (!isNaN(n)) { speed = n; applySpeeds(speed); localStorage.setItem('tts_speed', speed); markLocalSettingsChanged(); }
 }
 // Sync lib speed input when library options sheet opens
 const _libOptOpen = window.openSheet;
@@ -3648,6 +3691,7 @@ function showLibrary() {
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
   document.getElementById('library-screen').style.display = 'flex';
+  markLibraryScreen();
   renderLibrary();
 }
 
@@ -3715,6 +3759,7 @@ async function openBookFromLibrary(idx) {
     document.getElementById('drop-zone').classList.add('hidden');
     document.getElementById('reader-scroll').classList.remove('hidden');
     document.getElementById('player').classList.remove('hidden');
+    markReaderScreen();
     document.getElementById('library-screen').style.display = 'none';
     document.getElementById('setup-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
@@ -3971,6 +4016,7 @@ async function loadEpubFromLibrary(file, titleOverride) {
     document.getElementById('drop-zone').classList.add('hidden');
     document.getElementById('reader-scroll').classList.remove('hidden');
     document.getElementById('player').classList.remove('hidden');
+    markReaderScreen();
     buildSidebar(); buildDownloadList(); setupMediaSession();
     loadChapter(chapter);
     sentenceIndex = sentence;
@@ -4168,9 +4214,16 @@ async function driveApiList(q, fields='files(id,name)', orderBy='name', pageToke
   if (!r.ok) throw new Error('Drive API ' + r.status);
   return r.json();
 }
+// Drive's own orderBy=name is a plain string sort ("1, 10, 11, 2, 20, 3..."),
+// not what anyone wants for numbered folders like "1 Freebirds", "10 Simple
+// Man". Sort client-side with numeric:true so numbers compare naturally.
+function naturalNameSort(a, b) {
+  return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+}
+
 async function listDriveFolders(pid='root') {
   const d = await driveApiList(`'${pid}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`, 'files(id,name,modifiedTime)');
-  return d.files || [];
+  return (d.files || []).sort(naturalNameSort);
 }
 async function listDriveEpubs(fid) {
   let all=[], token=null;
@@ -4182,7 +4235,7 @@ async function listDriveEpubs(fid) {
     all = all.concat(d.files || []);
     token = d.nextPageToken;
   } while (token);
-  return all;
+  return all.sort(naturalNameSort);
 }
 
 // ── Drive browser favorites (folders) ──
@@ -4346,15 +4399,15 @@ function filterDriveFolders() {
         driveApiList(`(mimeType='application/epub+zip' or name contains '.epub') and name contains '${safe}' and trashed=false`, 'files(id,name,size)')
       ]);
       driveIsGlobalSearch = true;
-      renderDriveFolderItems(fd.files || [], ed.files || []);
+      renderDriveFolderItems((fd.files || []).sort(naturalNameSort), (ed.files || []).sort(naturalNameSort));
     } catch(e) { /* local filter above already shown as fallback */ }
   }, 500);
 }
 function applyDriveFolderSort() {
   const v = document.getElementById('drive-folder-sort').value;
   let sorted = [...driveAllFolders];
-  if (v === 'name-asc') sorted.sort((a,b) => a.name.localeCompare(b.name));
-  else if (v === 'name-desc') sorted.sort((a,b) => b.name.localeCompare(a.name));
+  if (v === 'name-asc') sorted.sort(naturalNameSort);
+  else if (v === 'name-desc') sorted.sort((a,b) => naturalNameSort(b,a));
   else if (v === 'date-desc') sorted.sort((a,b) => new Date(b.modifiedTime||0) - new Date(a.modifiedTime||0));
   else if (v === 'date-asc') sorted.sort((a,b) => new Date(a.modifiedTime||0) - new Date(b.modifiedTime||0));
   driveAllFolders = sorted;
@@ -4560,8 +4613,17 @@ async function gdriveRestoreOnLoad() {
     localStorage.setItem('tts_server', serverUrl);
     document.getElementById('server-url').value = serverUrl;
   }
-  if (saves.speed) { speed = saves.speed; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
-  if (saves.fontSize) { fontSize = saves.fontSize; applyFontSize(fontSize); localStorage.setItem('tts_fs', fontSize); }
+  // Drive only gets a settings push periodically (e.g. every 10 sentences),
+  // so on refresh this file can easily be older than a speed/font change the
+  // user just made on THIS device. Only let it win if it's actually newer
+  // than the last local change — otherwise a fresh "set speed to 1.6" gets
+  // silently stomped back to whatever speed was last synced (v3.3.4).
+  const localSettingsTs = parseInt(localStorage.getItem('bv_settings_ts') || '0');
+  const remoteSettingsAreNewer = !localSettingsTs || (saves.ts && saves.ts > localSettingsTs);
+  if (remoteSettingsAreNewer) {
+    if (saves.speed) { speed = saves.speed; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
+    if (saves.fontSize) { fontSize = saves.fontSize; applyFontSize(fontSize); localStorage.setItem('tts_fs', fontSize); }
+  }
   // Restore library if this device has none
   if (saves.library && saves.library.length > 0 && library.length === 0) {
     library = saves.library;
@@ -4637,4 +4699,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.2 | built 2026-07-14 -->
+<!-- Bookvoice v3.3.5 | built 2026-07-14 -->
