@@ -1215,6 +1215,7 @@ async function loadEpub(file) {
     const meta = parseEpubFilename(file.name);
     // Save to epubCache and library
     epubCache[bookTitle] = { chapters, epubZip: zip };
+    idbSaveBook(bookTitle, chapters); // persist for instant reopen later
     const existingIdx = library.findIndex(b => b.title === bookTitle);
     if (existingIdx >= 0) {
       library[existingIdx].totalChapters = chapters.length;
@@ -3670,6 +3671,63 @@ async function tryLoadFromDrive(book) {
 // library declared above
 let epubCache = {}; // bookTitle -> {chapters, text}
 
+// ── PERSISTENT EPUB CACHE (IndexedDB) ──
+// epubCache above is in-memory only, wiped on every refresh — which meant
+// resuming straight into the reader after a refresh (v3.3.5) still had to
+// re-download the whole epub from Drive and re-parse it from scratch every
+// single time, which is slow and feels like "reconnecting" rather than a
+// normal instant refresh. This persists parsed chapters locally so reopening
+// a book (including the refresh auto-resume) is instant with no network
+// round trip; Drive is only used as a fallback (new device, cache cleared).
+let _idbPromise = null;
+function idbOpen() {
+  if (_idbPromise) return _idbPromise;
+  _idbPromise = new Promise((resolve, reject) => {
+    if (!window.indexedDB) { reject(new Error('no indexedDB')); return; }
+    const req = indexedDB.open('bookvoice-db', 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('epubs')) db.createObjectStore('epubs', { keyPath: 'title' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return _idbPromise;
+}
+async function idbSaveBook(title, chapters) {
+  try {
+    const db = await idbOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('epubs', 'readwrite');
+      tx.objectStore('epubs').put({ title, chapters, ts: Date.now() });
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch(e) {}
+}
+async function idbLoadBook(title) {
+  try {
+    const db = await idbOpen();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction('epubs', 'readonly');
+      const req = tx.objectStore('epubs').get(title);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch(e) { return null; }
+}
+async function idbDeleteBook(title) {
+  try {
+    const db = await idbOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('epubs', 'readwrite');
+      tx.objectStore('epubs').delete(title);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch(e) {}
+}
+
 
 function deduplicateLibrary() {
   const seen = new Set();
@@ -3744,6 +3802,7 @@ function deleteBook(e, idx) {
     }).catch(()=>{});
   }
   delete epubCache[book.title];
+  idbDeleteBook(book.title);
   library.splice(idx, 1);
   saveLibrary();
   renderLibrary();
@@ -3795,6 +3854,21 @@ async function openBookFromLibrary(idx) {
   }
   // Clear stale cache so we re-parse fresh
   if (cached) delete epubCache[book.title];
+
+  // 1.5 Try persistent local cache (IndexedDB) — this is what makes
+  // reopening a book (including the refresh-into-reader resume) instant
+  // instead of re-downloading + re-parsing the whole epub from Drive every
+  // single time. Only Drive/epubZip-dependent features (translated-EPUB
+  // export) need the original zip, and those already handle a missing zip
+  // gracefully with a "re-open the book file" prompt.
+  const idbBook = await idbLoadBook(book.title);
+  if (idbBook && idbBook.chapters && idbBook.chapters.some(c => c.title && c.title.toLowerCase() !== 'unknown')) {
+    chapters = idbBook.chapters;
+    bookTitle = book.title;
+    epubCache[bookTitle] = { chapters };
+    showReader();
+    return;
+  }
 
   // 2. Try Drive
   if (gdriveEnabled && isTokenValid()) {
@@ -3873,6 +3947,7 @@ async function openBookFromLibrary(idx) {
             chapters = loadedChapters;
             bookTitle = book.title;
             epubCache[bookTitle] = { chapters, epubZip: zip };
+            idbSaveBook(bookTitle, chapters); // persist so next open skips Drive entirely
             // Update library entry driveFileId
             const libIdx = library.findIndex(b => b.title === bookTitle);
             if (libIdx >= 0 && !library[libIdx].driveFileId) {
@@ -3994,6 +4069,7 @@ async function loadEpubFromLibrary(file, titleOverride) {
     const title = titleOverride || cleanBookTitle(file.name.replace('.epub',''));
     // Cache in memory
     epubCache[title] = { chapters: loadedChapters, epubZip: zip };
+    idbSaveBook(title, loadedChapters); // persist for instant reopen later
     // Upload to Drive in background if not already there
     if (gdriveEnabled && isTokenValid()) driveUploadEpub(file, title);
 
@@ -4699,4 +4775,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.5 | built 2026-07-14 -->
+<!-- Bookvoice v3.3.6 | built 2026-07-14 -->
