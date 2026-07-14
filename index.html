@@ -3796,13 +3796,31 @@ function setLibSort(mode) {
   localStorage.setItem('bv_lib_sort', mode);
   renderLibrary();
 }
+// Books added before v3.3.8 have no addedAt at all, which made Recently/
+// Oldest Added a no-op for them (every book compared equal, so the sort left
+// them in whatever order they already happened to be in — confirmed by
+// testing, not just a theoretical gap). There's no real historical date to
+// recover, so approximate one: current array position, since new imports
+// are unshift'd to the front, meaning index 0 is usually the most recent.
+// This runs once (each book only needs backfilling the first time) and
+// gives Recently/Oldest Added an actual, reversible order instead of doing
+// nothing (v3.3.9).
+function backfillLibraryAddedAt() {
+  if (!library.some(b => !b.addedAt)) return;
+  const base = Date.now();
+  library.forEach((book, idx) => {
+    if (!book.addedAt) book.addedAt = base - idx * 1000;
+  });
+  saveLibrary();
+}
 function sortLibraryWithIndex(mode) {
+  backfillLibraryAddedAt();
   const withIdx = library.map((book, idx) => ({ book, idx }));
   withIdx.sort((a, b) => {
     if (mode === 'name-asc') return a.book.title.localeCompare(b.book.title, undefined, { numeric: true, sensitivity: 'base' });
     if (mode === 'name-desc') return b.book.title.localeCompare(a.book.title, undefined, { numeric: true, sensitivity: 'base' });
     if (mode === 'added-asc') return (a.book.addedAt || 0) - (b.book.addedAt || 0);
-    return (b.book.addedAt || 0) - (a.book.addedAt || 0); // added-desc (default) — books added before this feature have no addedAt and sort as oldest
+    return (b.book.addedAt || 0) - (a.book.addedAt || 0); // added-desc (default)
   });
   return withIdx;
 }
@@ -4830,4 +4848,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.8 | built 2026-07-15 -->
+<!-- Bookvoice v3.3.9 | built 2026-07-15 -->
