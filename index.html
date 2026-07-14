@@ -389,6 +389,7 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
     <select id="lib-sort-sel" onchange="setLibSort(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:8px 6px;font-family:inherit;outline:none;flex-shrink:0">
       <option value="added-desc">Recently Added</option>
       <option value="added-asc">Oldest Added</option>
+      <option value="read-desc">Recently Read</option>
       <option value="name-asc">Name A→Z</option>
       <option value="name-desc">Name Z→A</option>
     </select>
@@ -1237,6 +1238,9 @@ async function loadEpub(file) {
       library.unshift({ title: bookTitle, totalChapters: chapters.length, chapter: 0, sentence: 0,
         author: meta.author, series: meta.series, seriesNum: meta.seriesNum, addedAt: Date.now() });
     }
+    // Importing opens straight into the reader, so this counts as "opened" too
+    const openedNow = library.find(b => b.title === bookTitle);
+    if (openedNow) openedNow.lastOpenedAt = Date.now();
     saveLibrary();
     // Upload to Drive in background (don't await — don't block reading)
     if (gdriveEnabled && isTokenValid()) driveUploadEpub(file, bookTitle);
@@ -3813,13 +3817,32 @@ function backfillLibraryAddedAt() {
   });
   saveLibrary();
 }
+// "Recently Read" needs a separate lastOpenedAt (v3.3.10) — when a book was
+// last actually opened into the reader, not when it was added, so a book you
+// added ages ago but read again just now can still surface at the top. Books
+// opened since v3.3.10 get this stamped in openBookFromLibrary/loadEpub/
+// loadEpubFromLibrary; for older books with no record at all, fall back to
+// bv_pos (the single most-recently-active book, if this is it) or otherwise
+// addedAt — better than treating "never recorded" as "never read".
+function backfillLibraryLastOpenedAt() {
+  if (!library.some(b => !b.lastOpenedAt)) return;
+  const pos = loadSavedPos();
+  library.forEach(book => {
+    if (!book.lastOpenedAt) {
+      book.lastOpenedAt = (pos && pos.book === book.title && pos.ts) ? pos.ts : (book.addedAt || 0);
+    }
+  });
+  saveLibrary();
+}
 function sortLibraryWithIndex(mode) {
   backfillLibraryAddedAt();
+  backfillLibraryLastOpenedAt();
   const withIdx = library.map((book, idx) => ({ book, idx }));
   withIdx.sort((a, b) => {
     if (mode === 'name-asc') return a.book.title.localeCompare(b.book.title, undefined, { numeric: true, sensitivity: 'base' });
     if (mode === 'name-desc') return b.book.title.localeCompare(a.book.title, undefined, { numeric: true, sensitivity: 'base' });
     if (mode === 'added-asc') return (a.book.addedAt || 0) - (b.book.addedAt || 0);
+    if (mode === 'read-desc') return (b.book.lastOpenedAt || 0) - (a.book.lastOpenedAt || 0);
     return (b.book.addedAt || 0) - (a.book.addedAt || 0); // added-desc (default)
   });
   return withIdx;
@@ -3886,6 +3909,11 @@ async function openBookFromLibrary(idx) {
     document.getElementById('reader-scroll').classList.remove('hidden');
     document.getElementById('player').classList.remove('hidden');
     markReaderScreen();
+    // Track when this book was last actually opened, separate from when it
+    // was added — lets "Recently Read" surface a book you opened just now
+    // even if it's been sitting in the library for ages (v3.3.10).
+    book.lastOpenedAt = Date.now();
+    saveLibrary();
     document.getElementById('library-screen').style.display = 'none';
     document.getElementById('setup-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
@@ -4150,6 +4178,9 @@ async function loadEpubFromLibrary(file, titleOverride) {
     } else {
       library.unshift({ title, totalChapters: loadedChapters.length, chapter, sentence, addedAt: Date.now() });
     }
+    // Importing opens straight into the reader, so this counts as "opened" too
+    const openedNow2 = library.find(b => b.title === title);
+    if (openedNow2) openedNow2.lastOpenedAt = Date.now();
     saveLibrary();
 
     // Open it
@@ -4848,4 +4879,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.9 | built 2026-07-15 -->
+<!-- Bookvoice v3.3.10 | built 2026-07-15 -->
