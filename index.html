@@ -906,20 +906,27 @@ function updateFurthest() {
 
 function savePosition() {
   if (!bookTitle) return;
-  updateFurthest();
-  localStorage.setItem('bv_pos', JSON.stringify({
-    book: bookTitle,
-    // current = where you are right now (could be rereading earlier chapter)
-    chapter: currentChapter,
-    sentence: sentenceIndex,
-    // furthest = the most advanced point you've ever reached
-    furthestChapter,
-    furthestSentence,
-    ts: Date.now()
-  }));
-  // Save to Drive every 5 sentences
-  updateLibraryProgress();
-  if (sentenceIndex % 5 === 0) gdriveSavePosition();
+  // Never let a storage hiccup here throw uncaught — loadChapter() calls this
+  // at the end of every chapter load (v3.3.5), and an uncaught exception
+  // would reject loadChapter()'s promise. During chapter auto-advance that
+  // silently killed playback: `await loadChapter(...); playFrom(0);` never
+  // reaches playFrom() if the await rejects (v3.3.11).
+  try {
+    updateFurthest();
+    localStorage.setItem('bv_pos', JSON.stringify({
+      book: bookTitle,
+      // current = where you are right now (could be rereading earlier chapter)
+      chapter: currentChapter,
+      sentence: sentenceIndex,
+      // furthest = the most advanced point you've ever reached
+      furthestChapter,
+      furthestSentence,
+      ts: Date.now()
+    }));
+    // Save to Drive every 5 sentences
+    updateLibraryProgress();
+    if (sentenceIndex % 5 === 0) gdriveSavePosition();
+  } catch(e) {}
 }
 function loadSavedPos() { try { return JSON.parse(localStorage.getItem('bv_pos')); } catch { return null; } }
 function clearSavedPos() { localStorage.removeItem('bv_pos'); }
@@ -2529,7 +2536,17 @@ async function playFrom(startSentIdx) {
     if (currentChapter < chapters.length - 1) {
       document.getElementById('chi-'+currentChapter)?.classList.add('done');
       document.getElementById('dch-'+currentChapter)?.classList.add('done');
-      await loadChapter(currentChapter + 1);
+      // If loadChapter() throws for any reason, this used to die silently —
+      // the chapter's UI could still end up updated (currentChapter/DOM are
+      // set early in loadChapter, before anything risky runs) but playFrom(0)
+      // on the next line would never be reached, so playback just stopped
+      // with no error shown. Guard it so auto-advance can't be killed by one
+      // bad chapter load (v3.3.11).
+      try {
+        await loadChapter(currentChapter + 1);
+      } catch(e) {
+        showToast('⚠️ Could not load next chapter — tap play to retry');
+      }
       if (!isStopped && mySession === playSession) playFrom(0);
     } else {
       stopReading(); clearSavedPos();
@@ -4879,4 +4896,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.10 | built 2026-07-15 -->
+<!-- Bookvoice v3.3.11 | built 2026-07-15 -->
