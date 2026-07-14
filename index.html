@@ -384,7 +384,15 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
     <div class="lib-tab" id="tab-series" onclick="setLibView('series')">By Series</div>
     <div class="lib-tab" id="tab-author" onclick="setLibView('author')">By Author</div>
   </div>
-  <div class="lib-search"><input type="text" placeholder="🔍 Search books..." oninput="filterLibrary(this.value)" id="lib-search-input"></div>
+  <div class="lib-search" style="display:flex;gap:8px;align-items:center">
+    <input type="text" placeholder="🔍 Search books..." oninput="filterLibrary(this.value)" id="lib-search-input" style="flex:1">
+    <select id="lib-sort-sel" onchange="setLibSort(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:8px 6px;font-family:inherit;outline:none;flex-shrink:0">
+      <option value="added-desc">Recently Added</option>
+      <option value="added-asc">Oldest Added</option>
+      <option value="name-asc">Name A→Z</option>
+      <option value="name-desc">Name Z→A</option>
+    </select>
+  </div>
   <div class="lib-scroll" id="lib-scroll">
     <div class="lib-empty" id="lib-empty">
       <div class="drop-ring">📚</div>
@@ -1227,7 +1235,7 @@ async function loadEpub(file) {
       }
     } else {
       library.unshift({ title: bookTitle, totalChapters: chapters.length, chapter: 0, sentence: 0,
-        author: meta.author, series: meta.series, seriesNum: meta.seriesNum });
+        author: meta.author, series: meta.series, seriesNum: meta.seriesNum, addedAt: Date.now() });
     }
     saveLibrary();
     // Upload to Drive in background (don't await — don't block reading)
@@ -3777,6 +3785,28 @@ function showSetup() {
   showResumeBanner();
 }
 
+// Library sort — books previously only ever appeared in raw array order
+// (newest unshift'd to front, but re-importing an already-known title just
+// updates it in place instead of moving it, so it stayed wherever it
+// originally was). Persisted in localStorage so the choice sticks.
+function getLibSortMode() {
+  return localStorage.getItem('bv_lib_sort') || 'added-desc';
+}
+function setLibSort(mode) {
+  localStorage.setItem('bv_lib_sort', mode);
+  renderLibrary();
+}
+function sortLibraryWithIndex(mode) {
+  const withIdx = library.map((book, idx) => ({ book, idx }));
+  withIdx.sort((a, b) => {
+    if (mode === 'name-asc') return a.book.title.localeCompare(b.book.title, undefined, { numeric: true, sensitivity: 'base' });
+    if (mode === 'name-desc') return b.book.title.localeCompare(a.book.title, undefined, { numeric: true, sensitivity: 'base' });
+    if (mode === 'added-asc') return (a.book.addedAt || 0) - (b.book.addedAt || 0);
+    return (b.book.addedAt || 0) - (a.book.addedAt || 0); // added-desc (default) — books added before this feature have no addedAt and sort as oldest
+  });
+  return withIdx;
+}
+
 function renderLibrary() {
   const scroll = document.getElementById('lib-scroll');
   const empty = document.getElementById('lib-empty');
@@ -3784,7 +3814,10 @@ function renderLibrary() {
   empty.style.display = 'none';
   // Clear existing cards
   [...scroll.querySelectorAll('.book-card')].forEach(el => el.remove());
-  library.forEach((book, idx) => {
+  const sortMode = getLibSortMode();
+  const sortSel = document.getElementById('lib-sort-sel');
+  if (sortSel) sortSel.value = sortMode;
+  sortLibraryWithIndex(sortMode).forEach(({book, idx}) => {
     const card = document.createElement('div');
     card.className = 'book-card';
     const pct = book.totalChapters > 1 ? Math.round((book.chapter / (book.totalChapters-1))*100) : 0;
@@ -4097,7 +4130,7 @@ async function loadEpubFromLibrary(file, titleOverride) {
     if (existing >= 0) {
       library[existing].totalChapters = loadedChapters.length;
     } else {
-      library.unshift({ title, totalChapters: loadedChapters.length, chapter, sentence });
+      library.unshift({ title, totalChapters: loadedChapters.length, chapter, sentence, addedAt: Date.now() });
     }
     saveLibrary();
 
@@ -4797,4 +4830,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.7 | built 2026-07-14 -->
+<!-- Bookvoice v3.3.8 | built 2026-07-15 -->
