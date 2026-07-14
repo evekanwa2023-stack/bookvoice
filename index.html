@@ -108,6 +108,10 @@ header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1
 .sheet-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;border-bottom:1px solid var(--border);font-size:14px;font-weight:500;flex-shrink:0}
 .sheet-close{background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1}
 .sheet-body{overflow-y:auto;flex:1;padding:8px 0}
+/* Drive browser */
+.drive-folder-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .12s}
+.drive-folder-item:hover{background:var(--surface2)}
+.drive-section-hdr{padding:6px 16px 2px;font-size:10px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase}
 /* chapter items in drawer */
 .drawer-ch{padding:12px 20px;font-size:14px;color:var(--muted);cursor:pointer;border-left:3px solid transparent;transition:all .1s;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .drawer-ch:hover{background:var(--surface2);color:var(--text)}
@@ -372,6 +376,7 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
     <span class="lib-title">📚 My Library</span>
     <span id="drive-status-dot" style="font-size:11px;color:var(--muted);cursor:pointer" onclick="checkDriveStatus()" title="Drive sync status"></span>
     <button class="hbtn" onclick="document.getElementById('lib-file-input').click()">+ Add EPUB</button>
+    <button class="hbtn" onclick="openDriveBrowser()" title="Browse Google Drive for an EPUB">☁️ Drive</button>
     <button class="hbtn" onclick="openSheet('lib-options-sheet')">⚙</button>
   </div>
   <div class="lib-view-tabs">
@@ -385,6 +390,7 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
       <div class="drop-ring">📚</div>
       <p>No books yet.<br>Tap + Add EPUB to get started.</p>
       <button class="btn" style="justify-content:center" onclick="document.getElementById('lib-file-input').click()">+ Add EPUB</button>
+      <button class="btn" style="justify-content:center" onclick="openDriveBrowser()">☁️ Browse Google Drive</button>
     </div>
   </div>
 </div>
@@ -642,6 +648,35 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
     </div>
     <div style="padding:8px 12px;font-size:11px;color:var(--muted)" id="search-count"></div>
     <div class="sheet-body" id="search-results" style="padding:0"></div>
+  </div>
+</div>
+
+<!-- GOOGLE DRIVE BROWSER SHEET -->
+<div class="overlay" id="drive-browser-sheet">
+  <div class="overlay-bg" onclick="closeDriveBrowser()"></div>
+  <div class="sheet" style="max-height:85vh">
+    <div class="sheet-head">
+      <span id="drive-browser-title">📁 My Drive</span>
+      <button class="sheet-close" onclick="closeDriveBrowser()">×</button>
+    </div>
+    <div style="padding:6px 12px 0;display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <span id="drive-browser-account" style="font-size:11px;color:var(--muted)"></span>
+      <button class="btn ghost" style="padding:4px 10px;font-size:11px" onclick="switchDriveBrowseAccount()">🔁 Switch account</button>
+    </div>
+    <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center">
+      <input type="text" id="drive-folder-search" placeholder="🔍 Search Drive..."
+        oninput="filterDriveFolders()"
+        style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;outline:none"
+        autocorrect="off" autocapitalize="off">
+      <select id="drive-folder-sort" onchange="applyDriveFolderSort()"
+        style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 6px;color:var(--text);font-size:12px">
+        <option value="name-asc">Name A→Z</option>
+        <option value="name-desc">Name Z→A</option>
+        <option value="date-desc">Newest</option>
+        <option value="date-asc">Oldest</option>
+      </select>
+    </div>
+    <div class="sheet-body" id="drive-folder-list" style="padding:0"></div>
   </div>
 </div>
 
@@ -1299,6 +1334,7 @@ async function loadChapterInto(i, targetDiv) {
 
 async function loadChapter(i) {
   currentChapter = i; sentenceIndex = 0;
+  pruneAudioCache(i); // drop cached audio from other chapters, keep this one's
   userScrolled = false;
   if (userScrollTimer) { clearTimeout(userScrollTimer); userScrollTimer = null; }
   setSidebarActive(i);
@@ -1346,6 +1382,9 @@ async function loadChapter(i) {
 
   // Background preload next chapters
   if (langMode !== 'orig') startBgTranslate(i + 1);
+
+  // Background preload this chapter's audio so any tap/skip is instant
+  preloadChapterAudio(i).catch(() => {});
 }
 
 async function loadChapterTranslated(chIdx, body) {
@@ -2023,6 +2062,7 @@ function setLangMode(mode) {
   updateVoiceRowVisibility();
   translateCache = {};
   chapterTranslated = {};
+  clearAudioCacheAll(); // voice/text changes with language — old cached audio is stale
   if (bgTranslateController) bgTranslateController.aborted = true;
   const labels = {'orig':'Original','en':'English','th':'Thai','zh':'Chinese','zh-en':'Chinese → English','zh-th':'Chinese → Thai','zh-en-th':'Chinese → English → Thai'};
   showToast('Language: ' + (labels[mode] || mode));
@@ -2167,6 +2207,78 @@ async function fetchAudioBlob(text, retries = 1) {
   }
 }
 
+// ── PERSISTENT AUDIO CACHE ──
+// Caches fetched paragraph/sentence-entry audio so tapping/skipping to any
+// sentence already fetched (or preloaded) plays instantly, no refetch wait.
+// Key includes everything that changes the audio content, so stale entries
+// simply become unreachable rather than being served incorrectly.
+let audioCache = {};
+let audioPreloadToken = 0;
+
+function audioCacheKey(entrySentIdx) {
+  const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
+  return currentChapter + '|' + langMode + '|' + voice + '|' + speed + '|' + entrySentIdx;
+}
+
+// Reproduces the exact text playFrom() would fetch for a given entry sentence:
+// full paragraph text, unless entrySentIdx lands mid-paragraph (a tap/skip
+// into the middle), in which case it's trimmed to start exactly there.
+function textForEntry(entrySentIdx) {
+  const pIdx = findParagraphForSentence(entrySentIdx);
+  const para = paragraphs[pIdx];
+  if (!para) return '';
+  if (entrySentIdx > para.startIdx) {
+    return sentences.slice(entrySentIdx, para.startIdx + para.count).join(' ');
+  }
+  return para.text;
+}
+
+// Returns a Promise<blobUrl>, fetching only once per key — concurrent/
+// repeated calls for the same entry share the same in-flight request.
+function getCachedAudio(entrySentIdx) {
+  const key = audioCacheKey(entrySentIdx);
+  if (!audioCache[key]) {
+    const text = textForEntry(entrySentIdx);
+    audioCache[key] = fetchAudioBlob(text).catch(e => { delete audioCache[key]; throw e; });
+  }
+  return audioCache[key];
+}
+
+// Drop cached audio for every chapter except the one being kept, revoking
+// blob URLs so we don't leak memory across a long book.
+function pruneAudioCache(keepChapter) {
+  Object.keys(audioCache).forEach(key => {
+    const chIdx = parseInt(key.split('|')[0], 10);
+    if (chIdx !== keepChapter) {
+      const entry = audioCache[key];
+      delete audioCache[key];
+      Promise.resolve(entry).then(url => { try { URL.revokeObjectURL(url); } catch(e){} }).catch(()=>{});
+    }
+  });
+}
+
+// Full clear — used when langMode changes (voice/text baked into the audio changes).
+function clearAudioCacheAll() {
+  Object.values(audioCache).forEach(entry => {
+    Promise.resolve(entry).then(url => { try { URL.revokeObjectURL(url); } catch(e){} }).catch(()=>{});
+  });
+  audioCache = {};
+}
+
+// Background-fill the cache for every paragraph in the chapter so that
+// skipping/tapping anywhere in it never has to wait on a fresh TTS fetch.
+// Throttled with a small gap between requests so it doesn't starve a
+// foreground fetch triggered by the user actually tapping something.
+async function preloadChapterAudio(chIdx) {
+  const myToken = ++audioPreloadToken;
+  buildParagraphs();
+  for (const p of paragraphs) {
+    if (myToken !== audioPreloadToken || chIdx !== currentChapter) return;
+    try { await getCachedAudio(p.startIdx); } catch(e) {}
+    await new Promise(r => setTimeout(r, 60));
+  }
+}
+
 function clearHighlightTimers() {
   highlightTimers.forEach(clearTimeout);
   highlightTimers = [];
@@ -2228,32 +2340,34 @@ async function playFrom(startSentIdx) {
     firstParaText = firstPara?.text || '';
   }
 
-  // Fetch first blob. If this is the first paragraph of a prewarmed next chapter, reuse it.
+  // Fetch first blob (cached — instant if already preloaded/visited).
+  // If this is the first paragraph of a prewarmed next chapter, reuse that instead.
   let currentBlobUrl = null;
   try {
     if (startSentIdx === 0 && nextChapterFirstAudioCache && nextChapterFirstAudioCache.chapter === currentChapter) {
       currentBlobUrl = await nextChapterFirstAudioCache.promise;
       nextChapterFirstAudioCache = null;
+      audioCache[audioCacheKey(startSentIdx)] = Promise.resolve(currentBlobUrl);
     } else {
-      currentBlobUrl = await fetchAudioBlob(firstParaText);
+      currentBlobUrl = await getCachedAudio(startSentIdx);
     }
   } catch(e) { return; }
 
   if (isStopped || mySession !== playSession) {
-    URL.revokeObjectURL(currentBlobUrl); return;
+    return;
   }
 
-  // Pre-fetch next blob in parallel
+  // Pre-fetch next blob in parallel (cached — persists across taps/skips)
   let nextBlobPromise = pIdx+1 < paragraphs.length
-    ? fetchAudioBlob(paragraphs[pIdx+1].text)
+    ? getCachedAudio(paragraphs[pIdx+1].startIdx)
     : null;
   let nextNextBlobPromise = pIdx+2 < paragraphs.length
-    ? fetchAudioBlob(paragraphs[pIdx+2].text)
+    ? getCachedAudio(paragraphs[pIdx+2].startIdx)
     : null;
 
   while (pIdx < paragraphs.length) {
     if (isStopped || mySession !== playSession) {
-      URL.revokeObjectURL(currentBlobUrl); return;
+      return;
     }
 
     const para = paragraphs[pIdx];
@@ -2278,7 +2392,7 @@ async function playFrom(startSentIdx) {
     });
 
     if (isStopped || mySession !== playSession) {
-      URL.revokeObjectURL(currentBlobUrl); return;
+      return;
     }
 
     // Schedule highlights using duration estimate (words/speed)
@@ -2322,7 +2436,6 @@ async function playFrom(startSentIdx) {
     }
 
     clearHighlightTimers();
-    URL.revokeObjectURL(currentBlobUrl);
     currentBlobUrl = null;
 
     if (isStopped || mySession !== playSession) return;
@@ -2347,18 +2460,18 @@ async function playFrom(startSentIdx) {
 
     if (sleepEndChapter) { stopReading(); sleepEndChapter = false; return; }
 
-    // Get next blob (should already be fetched)
+    // Get next blob (should already be fetched/cached)
     if (pIdx < paragraphs.length) {
       try {
         currentBlobUrl = await nextBlobPromise;
         // Shift the preload queue
         nextBlobPromise = nextNextBlobPromise;
         nextNextBlobPromise = pIdx+2 < paragraphs.length
-          ? fetchAudioBlob(paragraphs[pIdx+2].text)
+          ? getCachedAudio(paragraphs[pIdx+2].startIdx)
           : null;
       } catch(e) {
-        // Retry once before skipping
-        try { currentBlobUrl = await fetchAudioBlob(paragraphs[pIdx]?.text || ''); }
+        // Retry once before skipping (getCachedAudio drops failed entries, so this re-fetches)
+        try { currentBlobUrl = paragraphs[pIdx] ? await getCachedAudio(paragraphs[pIdx].startIdx) : null; }
         catch(e2) { pIdx++; continue; }
       }
     }
@@ -3083,11 +3196,20 @@ async function tapReconnectDrive() {
   const bar = document.getElementById('drive-reconnect-bar');
   if (bar) bar.querySelector('button').textContent = 'Connecting...';
   await signInGDrive();
+  if (!isTokenValid()) {
+    // Google's OAuth popup sometimes only completes account selection on the
+    // first attempt without finishing the token grant (known Identity
+    // Services quirk) — retry once automatically instead of making the user
+    // tap Reconnect a second time themselves.
+    await signInGDrive();
+  }
   if (isTokenValid()) {
     if (bar) bar.style.display = 'none';
     // Push any pending progress
     if (bookTitle) gdriveSavePosition();
     showToast('☁️ Drive reconnected');
+  } else if (bar) {
+    bar.querySelector('button').textContent = 'Reconnect';
   }
 }
 
@@ -3918,6 +4040,10 @@ function updateServerStatus(state) {
 // Uses Google Identity Services + Drive REST API
 // Stores bookvoice-saves.json in Drive app data folder (hidden, only this app can see it)
 const GDRIVE_CLIENT_ID = '80533303528-2h05p622crn1opjp53pe252ln3uqh3rl.apps.googleusercontent.com'; // placeholder — see setup note
+// drive.appdata: hidden per-app storage for saves/library sync — tied to whichever
+// account is connected via the Library ⚙ "Connect Google Drive" button (kept
+// separate from the Drive *browser* account below, on purpose: one account can
+// hold the reading-progress sync while a different account is browsed for epubs)
 const GDRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.appdata';
 let gdriveToken = localStorage.getItem('gdrive_token') || null;
 let gdriveExpiry = parseInt(localStorage.getItem('gdrive_expiry') || '0');
@@ -3931,6 +4057,317 @@ let gdriveEnabled = !!gdriveToken;
 // 4. Credentials → OAuth 2.0 Client ID → Web app
 // 5. Add https://evekanwa2023-stack.github.io as authorized origin
 // 6. Copy the Client ID and replace GDRIVE_CLIENT_ID above
+
+// ── GOOGLE DRIVE FILE BROWSER (browse/search Drive, import an epub from anywhere in it) ──
+// Same approach as the audiobook project: custom folder browser over the Drive
+// REST API (no Google Picker API / extra API key needed).
+//
+// Deliberately a SEPARATE Google sign-in from the sync account above — this
+// account only ever gets read-only scope, and connecting it never touches or
+// replaces the sync account's token. Lets you e.g. keep reading-progress sync
+// on evekanwa2023 while browsing/importing epubs from a different Drive
+// (memaeve43) without one connection overwriting the other.
+const GDRIVE_BROWSE_SCOPES = 'https://www.googleapis.com/auth/drive.readonly email';
+let gdriveBrowseToken = localStorage.getItem('gdrive_browse_token') || null;
+let gdriveBrowseExpiry = parseInt(localStorage.getItem('gdrive_browse_expiry') || '0');
+let gdriveBrowseEmail = localStorage.getItem('gdrive_browse_email') || null;
+let gdriveBrowseEnabled = !!gdriveBrowseToken;
+
+function isBrowseTokenValid() {
+  return gdriveBrowseToken && Date.now() < gdriveBrowseExpiry - 60000;
+}
+
+function signInGDriveBrowse() {
+  return new Promise((resolve) => {
+    if (!window.google) {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = () => doSignInBrowse(resolve);
+      document.head.appendChild(s);
+    } else {
+      doSignInBrowse(resolve);
+    }
+  });
+}
+
+function doSignInBrowse(resolve) {
+  try {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: GDRIVE_CLIENT_ID,
+      scope: GDRIVE_BROWSE_SCOPES,
+      // Always show the account chooser — this connection is meant to be
+      // pickable independently of whichever account is already signed in
+      // for sync, so someone can browse a different Drive on purpose.
+      prompt: 'select_account',
+      callback: async (resp) => {
+        if (resp.error) { showToast('Sign-in failed: ' + resp.error); resolve(false); return; }
+        gdriveBrowseToken = resp.access_token;
+        gdriveBrowseExpiry = Date.now() + (resp.expires_in * 1000);
+        gdriveBrowseEnabled = true;
+        localStorage.setItem('gdrive_browse_token', gdriveBrowseToken);
+        localStorage.setItem('gdrive_browse_expiry', gdriveBrowseExpiry);
+        try {
+          const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: 'Bearer ' + gdriveBrowseToken }
+          });
+          if (r.ok) {
+            const info = await r.json();
+            gdriveBrowseEmail = info.email || null;
+            localStorage.setItem('gdrive_browse_email', gdriveBrowseEmail || '');
+          }
+        } catch(e) {}
+        resolve(true);
+      }
+    });
+    client.requestAccessToken();
+  } catch(e) {
+    showToast('Google Sign-in not configured yet');
+    resolve(false);
+  }
+}
+
+function disconnectDriveBrowse() {
+  gdriveBrowseToken = null; gdriveBrowseExpiry = 0; gdriveBrowseEnabled = false; gdriveBrowseEmail = null;
+  localStorage.removeItem('gdrive_browse_token');
+  localStorage.removeItem('gdrive_browse_expiry');
+  localStorage.removeItem('gdrive_browse_email');
+}
+
+async function switchDriveBrowseAccount() {
+  disconnectDriveBrowse();
+  const ok = await signInGDriveBrowse();
+  if (ok) await renderDriveFolderList('root', 'My Drive');
+  updateDriveBrowserAccountLabel();
+}
+
+function updateDriveBrowserAccountLabel() {
+  const el = document.getElementById('drive-browser-account');
+  if (!el) return;
+  el.textContent = gdriveBrowseEmail ? `Browsing: ${gdriveBrowseEmail}` : '';
+}
+
+let driveFolderStack = [];
+let driveAllFolders = [];
+let driveAllEpubs = [];
+let driveIsGlobalSearch = false;
+
+async function driveApiList(q, fields='files(id,name)', orderBy='name', pageToken=null) {
+  const p = new URLSearchParams({ q, fields:`nextPageToken,${fields}`, orderBy, pageSize:'1000', ...(pageToken?{pageToken}:{}) });
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?${p}`, { headers: { Authorization:`Bearer ${gdriveBrowseToken}` } });
+  if (!r.ok) throw new Error('Drive API ' + r.status);
+  return r.json();
+}
+async function listDriveFolders(pid='root') {
+  const d = await driveApiList(`'${pid}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`, 'files(id,name,modifiedTime)');
+  return d.files || [];
+}
+async function listDriveEpubs(fid) {
+  let all=[], token=null;
+  do {
+    const d = await driveApiList(
+      `'${fid}' in parents and (mimeType='application/epub+zip' or name contains '.epub') and trashed=false`,
+      'files(id,name,size)', 'name', token
+    );
+    all = all.concat(d.files || []);
+    token = d.nextPageToken;
+  } while (token);
+  return all;
+}
+
+// ── Drive browser favorites (folders) ──
+function getDriveFavs() { try { return JSON.parse(localStorage.getItem('bv_drive_fav') || '[]'); } catch(e) { return []; } }
+function saveDriveFavs(f) { localStorage.setItem('bv_drive_fav', JSON.stringify(f)); }
+function isDriveFav(id) { return getDriveFavs().some(f => f.id === id); }
+function toggleDriveFav(id, name, e) {
+  e.stopPropagation();
+  let favs = getDriveFavs();
+  if (isDriveFav(id)) favs = favs.filter(f => f.id !== id);
+  else favs.unshift({ id, name });
+  saveDriveFavs(favs);
+  renderDriveFolderItems(driveAllFolders, driveAllEpubs);
+}
+
+async function openDriveBrowser() {
+  if (!gdriveBrowseEnabled || !isBrowseTokenValid()) {
+    const ok = await signInGDriveBrowse();
+    if (!ok || !isBrowseTokenValid()) { showToast('Connect a Google account to browse Drive'); return; }
+  }
+  updateDriveBrowserAccountLabel();
+  driveFolderStack = [{ id:'root', name:'My Drive' }];
+  driveIsGlobalSearch = false;
+  openSheet('drive-browser-sheet');
+  await renderDriveFolderList('root', 'My Drive');
+}
+function closeDriveBrowser() { closeSheet('drive-browser-sheet'); }
+
+async function renderDriveFolderList(pid, pname) {
+  driveIsGlobalSearch = false;
+  document.getElementById('drive-browser-title').textContent = '📁 ' + pname;
+  document.getElementById('drive-folder-search').value = '';
+  const list = document.getElementById('drive-folder-list');
+  list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted)">Loading…</div>';
+  try {
+    const [folders, epubs] = await Promise.all([
+      listDriveFolders(pid),
+      pid !== 'root' ? listDriveEpubs(pid) : Promise.resolve([])
+    ]);
+    driveAllFolders = folders;
+    driveAllEpubs = epubs;
+    renderDriveFolderItems(folders, epubs);
+  } catch(e) {
+    list.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted)">Error: ${e.message}</div>`;
+  }
+}
+
+function renderDriveFolderItems(folders, epubs) {
+  const list = document.getElementById('drive-folder-list');
+  list.innerHTML = '';
+
+  if (driveIsGlobalSearch) {
+    const hdr = document.createElement('div');
+    hdr.className = 'drive-section-hdr';
+    hdr.textContent = '🔍 Search results (whole Drive)';
+    list.appendChild(hdr);
+    if (!folders.length && !epubs.length) {
+      list.innerHTML += '<div style="padding:24px;text-align:center;color:var(--muted)">No matches</div>';
+      return;
+    }
+    epubs.forEach(f => list.appendChild(mkDriveEpubItem(f)));
+    folders.forEach(f => {
+      const item = mkDriveFolderItem(f);
+      item.onclick = () => { driveIsGlobalSearch = false; driveFolderStack.push({id:f.id,name:f.name}); renderDriveFolderList(f.id,f.name); };
+      list.appendChild(item);
+    });
+    return;
+  }
+
+  const pid = driveFolderStack[driveFolderStack.length-1].id;
+
+  if (driveFolderStack.length > 1) {
+    const back = document.createElement('div');
+    back.className = 'drive-folder-item';
+    back.innerHTML = `<span style="font-size:18px">⬅</span><span style="flex:1;font-size:13px;color:var(--muted)">Back</span>`;
+    back.onclick = () => { driveFolderStack.pop(); const p=driveFolderStack[driveFolderStack.length-1]; renderDriveFolderList(p.id,p.name); };
+    list.appendChild(back);
+  }
+
+  if (pid === 'root') {
+    const favs = getDriveFavs();
+    if (favs.length > 0) {
+      const hdr = document.createElement('div');
+      hdr.className = 'drive-section-hdr';
+      hdr.textContent = '⭐ Favorites';
+      list.appendChild(hdr);
+      favs.forEach(f => {
+        const item = mkDriveFolderItem(f);
+        item.onclick = () => { driveFolderStack.push({id:f.id,name:f.name}); renderDriveFolderList(f.id,f.name); };
+        list.appendChild(item);
+      });
+      const divider = document.createElement('div');
+      divider.style.cssText = 'margin:4px 12px;border-top:1px solid var(--border)';
+      list.appendChild(divider);
+    }
+  }
+
+  if (!folders.length && !epubs.length) {
+    list.innerHTML += '<div style="padding:24px;text-align:center;color:var(--muted)">No folders or epub files here</div>';
+    return;
+  }
+
+  if (epubs.length > 0) {
+    const hdr = document.createElement('div');
+    hdr.className = 'drive-section-hdr';
+    hdr.textContent = '📖 EPUB files';
+    list.appendChild(hdr);
+    epubs.forEach(f => list.appendChild(mkDriveEpubItem(f)));
+  }
+  if (folders.length > 0) {
+    const hdr = document.createElement('div');
+    hdr.className = 'drive-section-hdr';
+    hdr.textContent = pid === 'root' ? '📁 Folders' : '📁 Subfolders';
+    list.appendChild(hdr);
+    folders.forEach(f => {
+      const item = mkDriveFolderItem(f);
+      item.onclick = () => { driveFolderStack.push({id:f.id,name:f.name}); renderDriveFolderList(f.id,f.name); };
+      list.appendChild(item);
+    });
+  }
+}
+
+function mkDriveFolderItem(f) {
+  const d = document.createElement('div');
+  d.className = 'drive-folder-item';
+  const starred = isDriveFav(f.id);
+  d.innerHTML = `<span style="font-size:18px">📁</span>
+    <span style="flex:1;font-size:13px">${escHtml(f.name)}${f.modifiedTime?`<br><span style="font-size:10px;color:var(--muted)">${new Date(f.modifiedTime).toLocaleDateString()}</span>`:''}</span>
+    <button onclick="toggleDriveFav('${f.id}','${f.name.replace(/'/g,"\\'")}',event)" style="background:none;border:none;cursor:pointer;font-size:16px;padding:2px 6px;opacity:${starred?1:0.3}">${starred?'⭐':'☆'}</button>
+    <span style="color:var(--muted)">›</span>`;
+  return d;
+}
+function mkDriveEpubItem(f) {
+  const d = document.createElement('div');
+  d.className = 'drive-folder-item';
+  d.innerHTML = `<span style="font-size:18px">📖</span><span style="flex:1;font-size:13px">${escHtml(f.name)}</span>`;
+  d.onclick = () => selectDriveEpub(f);
+  return d;
+}
+
+let _driveSearchTimer = null;
+function filterDriveFolders() {
+  const q = document.getElementById('drive-folder-search').value.trim();
+  const ql = q.toLowerCase();
+  clearTimeout(_driveSearchTimer);
+  if (!q) {
+    driveIsGlobalSearch = false;
+    renderDriveFolderItems(driveAllFolders, driveAllEpubs);
+    return;
+  }
+  driveIsGlobalSearch = false;
+  renderDriveFolderItems(
+    driveAllFolders.filter(f => f.name.toLowerCase().includes(ql)),
+    driveAllEpubs.filter(f => f.name.toLowerCase().includes(ql))
+  );
+  _driveSearchTimer = setTimeout(async () => {
+    try {
+      const safe = q.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const [fd, ed] = await Promise.all([
+        driveApiList(`mimeType='application/vnd.google-apps.folder' and name contains '${safe}' and trashed=false`, 'files(id,name,modifiedTime)'),
+        driveApiList(`(mimeType='application/epub+zip' or name contains '.epub') and name contains '${safe}' and trashed=false`, 'files(id,name,size)')
+      ]);
+      driveIsGlobalSearch = true;
+      renderDriveFolderItems(fd.files || [], ed.files || []);
+    } catch(e) { /* local filter above already shown as fallback */ }
+  }, 500);
+}
+function applyDriveFolderSort() {
+  const v = document.getElementById('drive-folder-sort').value;
+  let sorted = [...driveAllFolders];
+  if (v === 'name-asc') sorted.sort((a,b) => a.name.localeCompare(b.name));
+  else if (v === 'name-desc') sorted.sort((a,b) => b.name.localeCompare(a.name));
+  else if (v === 'date-desc') sorted.sort((a,b) => new Date(b.modifiedTime||0) - new Date(a.modifiedTime||0));
+  else if (v === 'date-asc') sorted.sort((a,b) => new Date(a.modifiedTime||0) - new Date(b.modifiedTime||0));
+  driveAllFolders = sorted;
+  renderDriveFolderItems(sorted, driveAllEpubs);
+}
+
+async function selectDriveEpub(f) {
+  closeDriveBrowser();
+  if (!serverUrl) { showSetup(); return; }
+  showLoading(true);
+  try {
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, {
+      headers: { Authorization: 'Bearer ' + gdriveBrowseToken }
+    });
+    if (!r.ok) throw new Error('Drive download failed: ' + r.status);
+    const blob = await r.blob();
+    const name = f.name.toLowerCase().endsWith('.epub') ? f.name : f.name + '.epub';
+    const file = new File([blob], name, { type: 'application/epub+zip' });
+    await loadEpubFromLibrary(file);
+  } catch(e) {
+    showLoading(false);
+    showToast('Could not import that file: ' + e.message);
+  }
+}
 
 function isTokenValid() {
   return gdriveToken && Date.now() < gdriveExpiry - 60000;
@@ -4189,4 +4626,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.2.4 | built 2026-06-07 21:20 -->
+<!-- Bookvoice v3.3.1 | built 2026-07-14 -->
