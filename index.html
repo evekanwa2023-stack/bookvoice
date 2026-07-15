@@ -1469,7 +1469,11 @@ async function loadChapterTranslated(chIdx, body) {
   tempDiv.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
   tempDiv.innerHTML = chapters[chIdx].html;
   document.body.appendChild(tempDiv);
-  const blockEls = [...tempDiv.querySelectorAll('p,li,h1,h2,h3,h4,blockquote')];
+  // v3.3.18: leaf blocks only — nested chat wrappers duplicated every message
+  // in translation mode too (parent block's text = all messages, then each
+  // child again). Known minor gap: direct text sitting in a wrapper block
+  // outside its child blocks is skipped in translation mode (rare in practice).
+  const blockEls = [...tempDiv.querySelectorAll(BLOCK_SEL)].filter(el => !el.querySelector(BLOCK_SEL));
   document.body.removeChild(tempDiv);
 
   const total = blockEls.length || 1;
@@ -1820,21 +1824,52 @@ function seekClick(e,bar) {
 }
 
 // ── SENTENCES ──
+// v3.3.18 — selector shared by wrapSentences / loadChapterTranslated /
+// firstParagraphTextFromElement. All three must agree (see handoff).
+const BLOCK_SEL='p,li,h1,h2,h3,h4,blockquote';
+
 function wrapSentences(container) {
   sentences=[]; sentenceEls=[];
-  const blocks=container.querySelectorAll('p,li,h1,h2,h3,h4,blockquote');
+  const blocks=container.querySelectorAll(BLOCK_SEL);
   if(!blocks.length){
     const t=container.innerText.trim();
     if(t){sentences.push(t);container.innerHTML=`<span class="sentence" data-si="0">${escHtml(t)}</span>`;}
   } else {
     blocks.forEach(block=>{
+      // v3.3.18: chat/texting scenes are NESTED blocks (this book:
+      // <blockquote> wrapping every message <p>). querySelectorAll returns
+      // BOTH parent and children, so the old code pushed the chat text into
+      // sentences[] twice (parent innerText = all messages, then each child
+      // again) — audio read chat scenes twice, and the children's spans never
+      // landed in the DOM (parent innerHTML replacement destroyed them), so
+      // sentences[] and sentenceEls[] went permanently out of sync for the
+      // rest of the chapter (highlight on a different sentence than the
+      // voice). Container blocks now get only their DIRECT text nodes
+      // wrapped; nested blocks are processed on their own visit — every piece
+      // of text enters exactly once and chat formatting is preserved.
+      if(!container.contains(block)) return; // safety: detached
+      if(block.querySelector(BLOCK_SEL)){
+        [...block.childNodes].forEach(node=>{
+          if(node.nodeType!==Node.TEXT_NODE) return;
+          const t=node.textContent.trim(); if(!t) return;
+          const holder=document.createElement('span');
+          holder.innerHTML=splitSent(t).map(s=>`<span class="sentence">${escHtml(s)}</span>`).join(' ');
+          node.replaceWith(...holder.childNodes);
+        });
+        return;
+      }
       const t=block.innerText.trim(); if(!t) return;
       const parts=splitSent(t);
-      block.innerHTML=parts.map((s,j)=>`<span class="sentence" data-si="${sentences.length+j}">${escHtml(s)}</span>`).join(' ');
-      sentences.push(...parts);
+      block.innerHTML=parts.map(s=>`<span class="sentence">${escHtml(s)}</span>`).join(' ');
     });
   }
   sentenceEls=[...container.querySelectorAll('.sentence')];
+  // v3.3.18: canonical sentence list rebuilt from DOM order — guarantees
+  // sentences[i] ↔ sentenceEls[i] stay aligned no matter how blocks nest.
+  if(blocks.length){
+    sentences=sentenceEls.map(el=>el.textContent);
+    sentenceEls.forEach((el,i)=>{ el.dataset.si=i; });
+  }
   sentenceEls.forEach((el,i)=>{
     el.addEventListener('click',()=>{
       // Stop everything first, wait for it to fully stop, then start new
@@ -2102,8 +2137,14 @@ function firstParagraphTextFromElement(root, fallbackText) {
   const GROUP = 4; // must match buildParagraphs()
   const sents = [];
   if (root) {
-    const blocks = root.querySelectorAll('p,li,h1,h2,h3,h4,blockquote'); // same as wrapSentences()
+    const blocks = root.querySelectorAll(BLOCK_SEL); // same as wrapSentences()
     for (const block of blocks) {
+      // v3.3.18: skip container blocks (nested chat wrappers) like
+      // wrapSentences does — their text would double-count the children's.
+      // Wrapper direct-text edge case not replicated here; the pre.text ===
+      // paragraphs[0].text guard in playFrom() degrades any mismatch to a
+      // fresh fetch, never a desync.
+      if (block.querySelector(BLOCK_SEL)) continue;
       const t = (block.innerText || block.textContent || '').trim(); // wrapSentences uses innerText
       if (!t) continue;
       sents.push(...splitSent(t));
@@ -5029,4 +5070,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.17 | built 2026-07-15 14:20 -->
+<!-- Bookvoice v3.3.18 | built 2026-07-15 -->
