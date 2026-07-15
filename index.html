@@ -2075,20 +2075,33 @@ async function safePlayAudio(audio, sessionId) {
   return false;
 }
 
-function firstReadableTextFromElement(root) {
-  if (!root) return '';
-  const parts = [];
-  root.querySelectorAll('h1,h2,h3,p,div').forEach(el => {
-    const t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
-    if (t.length >= 8 && !parts.includes(t)) parts.push(t);
-  });
-  return parts.slice(0, 2).join(' ').slice(0, 1800);
+// textContent first, innerText as fallback — innerText reflects rendered
+// CSS state and can behave inconsistently in Safari for elements that are
+// off-screen/visibility:hidden (exactly how the prerender div is built), so
+// preferring textContent avoids depending on that. If DOM extraction still
+// comes up empty for any reason, fallbackText (the chapter's already-parsed
+// plain text, when available) is used as a last resort so a prewarm never
+// silently no-ops (v3.3.13).
+function firstReadableTextFromElement(root, fallbackText) {
+  if (root) {
+    const parts = [];
+    root.querySelectorAll('h1,h2,h3,p,div').forEach(el => {
+      const t = (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
+      if (t.length >= 8 && !parts.includes(t)) parts.push(t);
+    });
+    const joined = parts.slice(0, 2).join(' ').slice(0, 1800);
+    if (joined) return joined;
+  }
+  return (fallbackText || '').replace(/\s+/g, ' ').trim().slice(0, 1800);
 }
 
 async function prewarmNextChapterAudio(chIdx, preDiv) {
   try {
     if (chIdx >= chapters.length) return;
-    const txt = firstReadableTextFromElement(preDiv);
+    // Fallback only applies to the original language — translated text only
+    // exists in the DOM (preDiv), there's no pre-parsed plain-text version of it.
+    const fallback = langMode === 'orig' ? (chapters[chIdx]?.text || '') : '';
+    const txt = firstReadableTextFromElement(preDiv, fallback);
     if (!txt) return;
     nextChapterFirstAudioCache = { chapter: chIdx, promise: fetchAudioBlob(txt) };
   } catch(e) {}
@@ -2361,6 +2374,12 @@ function scheduleHighlights(para, firstSentIdx, duration) {
 
 async function playFrom(startSentIdx) {
   isStopped = false;
+  // Defense in depth: never let a highlight timer scheduled by a previous
+  // playFrom() session survive into this one. Auto-advance calls playFrom(0)
+  // directly (no stopAudio() in between, unlike a manual sentence tap), so
+  // this session used to rely entirely on the old session's own teardown
+  // having already cleared everything — this guarantees it regardless (v3.3.15).
+  clearHighlightTimers();
   if (!sessionStart) startStatsSession();
   const mySession = ++playSession;
   sentenceIndex = startSentIdx;
@@ -2478,9 +2497,32 @@ async function playFrom(startSentIdx) {
       return;
     }
 
-    // Refine highlights once we know real duration
+    // Refine highlights once we know real duration. The pre-play estimate
+    // (words/speed) is a rough approximation — if the real duration isn't
+    // available yet at this exact moment (plausible right when a fresh
+    // audio.src is assigned, which is exactly what happens at a chapter
+    // boundary), this used to just keep running on the estimate for the
+    // whole paragraph with no correction, which is what made highlighting
+    // visibly lag behind the voice specifically when starting a new chapter
+    // (mid-chapter paragraphs reuse an audio element that's already "warmed
+    // up" and reports duration reliably). Now falls back to correcting the
+    // schedule the moment real duration does become available (v3.3.14).
     if (audio.duration && !isNaN(audio.duration)) {
       scheduleHighlights(effectivePara, firstSent, audio.duration * 1000);
+    } else {
+      // audio.src gets reassigned to the next paragraph's blob as soon as
+      // this one ends — capture both the session and the exact blob this
+      // listener is for, so a late-firing event can't reschedule highlights
+      // against whatever paragraph happens to be playing by then.
+      const mySessionForFix = mySession;
+      const blobUrlForFix = currentBlobUrl;
+      audio.addEventListener('loadedmetadata', function onMeta() {
+        audio.removeEventListener('loadedmetadata', onMeta);
+        if (isStopped || mySessionForFix !== playSession || audio.src !== blobUrlForFix) return;
+        if (audio.duration && !isNaN(audio.duration)) {
+          scheduleHighlights(effectivePara, firstSent, audio.duration * 1000);
+        }
+      }, { once: true });
     }
 
     sentenceIndex = firstSent;
@@ -4913,4 +4955,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.12 | built 2026-07-15 -->
+<!-- Bookvoice v3.3.15 | built 2026-07-15 -->
