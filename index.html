@@ -2085,24 +2085,33 @@ async function safePlayAudio(audio, sessionId) {
   return false;
 }
 
-// textContent first, innerText as fallback — innerText reflects rendered
-// CSS state and can behave inconsistently in Safari for elements that are
-// off-screen/visibility:hidden (exactly how the prerender div is built), so
-// preferring textContent avoids depending on that. If DOM extraction still
-// comes up empty for any reason, fallbackText (the chapter's already-parsed
-// plain text, when available) is used as a last resort so a prewarm never
-// silently no-ops (v3.3.13).
-function firstReadableTextFromElement(root, fallbackText) {
+// v3.3.17 — REPLACES firstReadableTextFromElement. The prewarmed blob used to
+// be built from a *different* extraction than what playFrom() actually plays:
+// first ~2 DOM blocks (selector even included bare `div`s) up to 1800 chars —
+// often 9+ sentences — while playFrom() plays paragraph 0, which is EXACTLY
+// GROUP=4 sentences from wrapSentences()+buildParagraphs(). Reusing that blob
+// meant the voice read far ahead of the 4-sentence highlight schedule, and
+// every later paragraph was audibly re-reading text the blob already voiced —
+// the long-standing "highlight doesn't follow after auto-advance until I tap
+// a sentence" bug. This replicates the wrapSentences() pipeline (same block
+// selector, same splitSent, same GROUP) so the prewarm text is byte-identical
+// to the future paragraphs[0].text. playFrom() also verifies the match before
+// adopting the blob, so any residual extraction difference (hidden-div
+// innerText quirks etc.) degrades to a fresh correct fetch, never a mismatch.
+function firstParagraphTextFromElement(root, fallbackText) {
+  const GROUP = 4; // must match buildParagraphs()
+  const sents = [];
   if (root) {
-    const parts = [];
-    root.querySelectorAll('h1,h2,h3,p,div').forEach(el => {
-      const t = (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
-      if (t.length >= 8 && !parts.includes(t)) parts.push(t);
-    });
-    const joined = parts.slice(0, 2).join(' ').slice(0, 1800);
-    if (joined) return joined;
+    const blocks = root.querySelectorAll('p,li,h1,h2,h3,h4,blockquote'); // same as wrapSentences()
+    for (const block of blocks) {
+      const t = (block.innerText || block.textContent || '').trim(); // wrapSentences uses innerText
+      if (!t) continue;
+      sents.push(...splitSent(t));
+      if (sents.length >= GROUP) break;
+    }
   }
-  return (fallbackText || '').replace(/\s+/g, ' ').trim().slice(0, 1800);
+  if (!sents.length && fallbackText) sents.push(...splitSent(fallbackText.trim()));
+  return sents.slice(0, GROUP).join(' ');
 }
 
 async function prewarmNextChapterAudio(chIdx, preDiv) {
@@ -2111,9 +2120,11 @@ async function prewarmNextChapterAudio(chIdx, preDiv) {
     // Fallback only applies to the original language — translated text only
     // exists in the DOM (preDiv), there's no pre-parsed plain-text version of it.
     const fallback = langMode === 'orig' ? (chapters[chIdx]?.text || '') : '';
-    const txt = firstReadableTextFromElement(preDiv, fallback);
+    const txt = firstParagraphTextFromElement(preDiv, fallback);
     if (!txt) return;
-    nextChapterFirstAudioCache = { chapter: chIdx, promise: fetchAudioBlob(txt) };
+    // `text` is stored so playFrom() can verify it matches paragraphs[0].text
+    // before adopting the blob (v3.3.17).
+    nextChapterFirstAudioCache = { chapter: chIdx, text: txt, promise: fetchAudioBlob(txt) };
   } catch(e) {}
 }
 
@@ -2361,12 +2372,16 @@ function clearHighlightTimers() {
   highlightTimers = [];
 }
 
-function scheduleHighlights(para, firstSentIdx, duration) {
+// elapsedMs (v3.3.17): how far the audio has ALREADY played when this schedule
+// is built — nonzero when auto-advance gapless-started the blob before
+// loadChapter/playFrom caught up. Each timer fires that much sooner (clamped
+// to 0, i.e. immediately for sentences the voice has already passed).
+function scheduleHighlights(para, firstSentIdx, duration, elapsedMs = 0) {
   clearHighlightTimers();
   const sentGroup = sentences.slice(para.startIdx, para.startIdx + para.count);
   const charCounts = sentGroup.map(s => Math.max(s.length, 1));
   const totalChars = charCounts.reduce((a,b) => a+b, 0) || 1;
-  let elapsed = 0;
+  let elapsed = -elapsedMs;
   sentGroup.forEach((_, j) => {
     const sIdx = para.startIdx + j;
     if (sIdx < firstSentIdx) { elapsed += (charCounts[j]/totalChars)*duration; return; }
@@ -2442,11 +2457,19 @@ async function playFromRun(startSentIdx) {
   // If this is the first paragraph of a prewarmed next chapter, reuse that instead.
   let currentBlobUrl = null;
   try {
-    if (startSentIdx === 0 && nextChapterFirstAudioCache && nextChapterFirstAudioCache.chapter === currentChapter) {
-      currentBlobUrl = await nextChapterFirstAudioCache.promise;
+    const pre = nextChapterFirstAudioCache;
+    if (startSentIdx === 0 && pre && pre.chapter === currentChapter
+        && paragraphs[0] && pre.text === paragraphs[0].text) {
+      currentBlobUrl = await pre.promise;
       nextChapterFirstAudioCache = null;
       audioCache[audioCacheKey(startSentIdx)] = Promise.resolve(currentBlobUrl);
     } else {
+      // v3.3.17: if a prewarm exists for this chapter but its text does NOT
+      // exactly match paragraph 0 (extraction difference), discard it and
+      // fetch the correct blob — the gapless early-start may already be
+      // playing the mismatched blob; assigning the fresh src below interrupts
+      // it (a brief repeat of the opening words, but highlights stay in sync).
+      if (pre && pre.chapter === currentChapter) nextChapterFirstAudioCache = null;
       currentBlobUrl = await getCachedAudio(startSentIdx);
     }
   } catch(e) {
@@ -2518,7 +2541,7 @@ async function playFromRun(startSentIdx) {
 
     // Schedule highlights using duration estimate (words/speed)
     const estDuration = (effectivePara.text.split(/\s+/).length / (speed * 2.5)) * 1000;
-    scheduleHighlights(effectivePara, firstSent, estDuration);
+    scheduleHighlights(effectivePara, firstSent, estDuration, alreadyPlaying ? audio.currentTime * 1000 : 0);
 
     // Actually play. If browser refuses autoplay, do not fake progress or skip silently.
     const played = alreadyPlaying ? true : await safePlayAudio(audio, mySession);
@@ -2539,7 +2562,7 @@ async function playFromRun(startSentIdx) {
     // up" and reports duration reliably). Now falls back to correcting the
     // schedule the moment real duration does become available (v3.3.14).
     if (audio.duration && !isNaN(audio.duration)) {
-      scheduleHighlights(effectivePara, firstSent, audio.duration * 1000);
+      scheduleHighlights(effectivePara, firstSent, audio.duration * 1000, audio.currentTime * 1000);
     } else {
       // audio.src gets reassigned to the next paragraph's blob as soon as
       // this one ends — capture both the session and the exact blob this
@@ -2551,7 +2574,7 @@ async function playFromRun(startSentIdx) {
         audio.removeEventListener('loadedmetadata', onMeta);
         if (isStopped || mySessionForFix !== playSession || audio.src !== blobUrlForFix) return;
         if (audio.duration && !isNaN(audio.duration)) {
-          scheduleHighlights(effectivePara, firstSent, audio.duration * 1000);
+          scheduleHighlights(effectivePara, firstSent, audio.duration * 1000, audio.currentTime * 1000);
         }
       }, { once: true });
     }
@@ -5006,4 +5029,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.16 | built 2026-07-15 -->
+<!-- Bookvoice v3.3.17 | built 2026-07-15 14:20 -->
