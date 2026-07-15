@@ -2405,7 +2405,24 @@ async function playFrom(startSentIdx) {
     } else {
       currentBlobUrl = await getCachedAudio(startSentIdx);
     }
-  } catch(e) { return; }
+  } catch(e) {
+    // This used to just `return` here — silently, with the "Reading..."
+    // status dot left on and no way to tell playback had actually stopped.
+    // This is a distinct cause of "chapter changes but audio never starts"
+    // from the loadChapter()/savePosition() bug fixed in v3.3.11: this one
+    // fires when the prewarmed (or freshly requested) audio for the new
+    // chapter's first paragraph fails to fetch — e.g. a transient TTS
+    // server hiccup during background prewarm. Fall back to one fresh
+    // attempt before giving up (v3.3.12).
+    nextChapterFirstAudioCache = null;
+    try {
+      currentBlobUrl = await getCachedAudio(startSentIdx);
+    } catch(e2) {
+      setStatus('paused');
+      showToast('⚠️ Could not load audio — tap play to retry');
+      return;
+    }
+  }
 
   if (isStopped || mySession !== playSession) {
     return;
@@ -4896,4 +4913,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.11 | built 2026-07-15 -->
+<!-- Bookvoice v3.3.12 | built 2026-07-15 -->
