@@ -848,35 +848,45 @@ async function requestWakeLock() {
 }
 function releaseWakeLock() { if (wakeLock) { wakeLock.release(); wakeLock = null; } }
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible') {
-    if (isPlaying) await requestWakeLock();
-    if (isPlaying && !isStopped && bgAudio) {
-      // If audio ended while backgrounded, it will naturally resolve the promise
-      // If it's paused (iOS suspended), resume it
-      if (bgAudio.paused && bgAudio.src && bgAudio.readyState >= 2) {
-        try { await bgAudio.play(); } catch(e) {}
-      }
-      // If audio src is empty (somehow lost), restart from current sentence
-      if (!bgAudio.src || bgAudio.src === window.location.href) {
-        stopAudio();
-        setTimeout(() => {
-          if (!isStopped) {
-            isPlaying = true;
-            isStopped = false;
-            document.getElementById('play-btn').textContent = '⏸';
-            playFrom(sentenceIndex);
-          }
-        }, 300);
-      }
-    }
-  }
+  if (document.visibilityState !== 'visible') return;
+  if (isPlaying) await requestWakeLock();
+  resumePlaybackIfNeeded();
 });
 
-window.addEventListener('pageshow', async () => {
-  if (isPlaying && !isStopped && bgAudio && bgAudio.paused) {
-    try { await bgAudio.play(); } catch(e) {}
+window.addEventListener('pageshow', () => resumePlaybackIfNeeded());
+
+// v3.3.16 — single recovery path when the page returns to the foreground.
+// Fixes the "page shows the new chapter but voice repeats the previous
+// chapter's last sentence" bug: the old handler blindly called play() on the
+// persistent audio element whenever it was paused — but at a stalled chapter
+// boundary that element still holds the OLD chapter's last paragraph in the
+// 'ended' state, and play() on an ended element REWINDS AND REPLAYS IT.
+// (The old "restart" fallback here was also dead code: stopAudio() sets
+// isStopped=true, then the timeout checked !isStopped — never true.)
+function resumePlaybackIfNeeded() {
+  if (!isPlaying || isStopped || !bgAudio) return;
+  if (playFromActive) {
+    // The playback engine loop is still alive. If iOS merely suspended the
+    // audio mid-paragraph, resume it. If the audio has ENDED, do nothing —
+    // the loop is between paragraphs/chapters and its suspended awaits will
+    // pick up now that we're foregrounded; replaying the ended blob is
+    // exactly the repeat-last-sentence bug.
+    if (bgAudio.paused && !bgAudio.ended && bgAudio.src && bgAudio.readyState >= 2) {
+      bgAudio.play().catch(() => {});
+    }
+    return;
   }
-});
+  // Engine is dead but we're supposed to be playing — a chapter transition
+  // failed while backgrounded (play() rejected / fetch suspended). Restart
+  // cleanly from the current position instead of poking the stale element.
+  stopAudio();
+  setTimeout(() => {
+    if (!isPlaying) return; // user hit pause in the meantime
+    isStopped = false;
+    document.getElementById('play-btn').textContent = '⏸';
+    playFrom(sentenceIndex);
+  }, 300);
+}
 
 // ── MEDIA SESSION ──
 function setupMediaSession() {
@@ -2372,7 +2382,22 @@ function scheduleHighlights(para, firstSentIdx, duration) {
   });
 }
 
+// v3.3.16 — engine liveness tracking. resumePlaybackIfNeeded() must know
+// whether the playback loop is still running (just suspended by iOS) or has
+// actually returned (failed chapter transition), because the correct recovery
+// is opposite in each case. The wrapper marks the loop alive for its entire
+// run; the session check in `finally` keeps the auto-advance chained
+// playFrom(0) (started inside playFromRun, not awaited) from being wrongly
+// marked dead when the outer run unwinds.
+let playFromSeq = 0, playFromActive = 0;
 async function playFrom(startSentIdx) {
+  const seq = ++playFromSeq;
+  playFromActive = seq;
+  try { await playFromRun(startSentIdx); }
+  finally { if (playFromActive === seq) playFromActive = 0; }
+}
+
+async function playFromRun(startSentIdx) {
   isStopped = false;
   // Defense in depth: never let a highlight timer scheduled by a previous
   // playFrom() session survive into this one. Auto-advance calls playFrom(0)
@@ -2469,12 +2494,18 @@ async function playFrom(startSentIdx) {
       ? { startIdx: startSentIdx, count: para.count - (startSentIdx - para.startIdx), text: firstParaText }
       : para;
 
-    // Set audio src and play
-    audio.src = currentBlobUrl;
+    // Set audio src and play.
+    // v3.3.16: chapter auto-advance may have ALREADY started this exact blob
+    // (gapless start fired at the previous chapter's end, before loadChapter)
+    // — in that case don't reset src or re-play, just adopt the playback in
+    // progress. Resetting src would restart the audio; re-playing is a no-op
+    // but the canplay wait below could stall.
+    const alreadyPlaying = audio.src === currentBlobUrl && !audio.paused && !audio.ended;
+    if (!alreadyPlaying) audio.src = currentBlobUrl;
     currentAudio = audio;
 
     // Wait for enough data then play — short timeout, blob is already downloaded
-    await new Promise(r => {
+    if (!alreadyPlaying) await new Promise(r => {
       if (audio.readyState >= 3) { r(); return; }
       audio.oncanplay = r;
       audio.onerror = r;
@@ -2490,7 +2521,7 @@ async function playFrom(startSentIdx) {
     scheduleHighlights(effectivePara, firstSent, estDuration);
 
     // Actually play. If browser refuses autoplay, do not fake progress or skip silently.
-    const played = await safePlayAudio(audio, mySession);
+    const played = alreadyPlaying ? true : await safePlayAudio(audio, mySession);
     if (!played) {
       clearHighlightTimers();
       setStatus('paused');
@@ -2593,6 +2624,26 @@ async function playFrom(startSentIdx) {
   if (!isStopped && mySession === playSession) {
     if (sleepEndChapter) { stopReading(); sleepEndChapter = false; return; }
     if (currentChapter < chapters.length - 1) {
+      // v3.3.16: keep the iOS background audio session alive across the
+      // chapter boundary. iOS only lets a suspended page start new audio if
+      // playback resumes almost immediately after 'ended' — doing
+      // loadChapter()'s DOM work and awaits first left a silent gap, iOS tore
+      // the session down, and the play() inside the next playFrom() was then
+      // rejected while locked. This is the actual root cause of auto-advance
+      // dying at chapter boundaries in background. So: if the prewarmed
+      // first-paragraph audio is ready, start it RIGHT NOW, then let
+      // loadChapter/playFrom catch up while it's already speaking (playFrom
+      // detects the blob already playing and adopts it — see alreadyPlaying).
+      try {
+        const pre = nextChapterFirstAudioCache;
+        if (pre && pre.chapter === currentChapter + 1) {
+          const earlyUrl = await Promise.race([pre.promise, sleepMs(50).then(() => null)]);
+          if (earlyUrl && !isStopped && mySession === playSession) {
+            audio.src = earlyUrl;
+            audio.play().catch(() => {});
+          }
+        }
+      } catch(e) {}
       document.getElementById('chi-'+currentChapter)?.classList.add('done');
       document.getElementById('dch-'+currentChapter)?.classList.add('done');
       // If loadChapter() throws for any reason, this used to die silently —
@@ -4955,4 +5006,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.15 | built 2026-07-15 -->
+<!-- Bookvoice v3.3.16 | built 2026-07-15 -->
