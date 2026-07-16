@@ -3279,6 +3279,44 @@ function openBookSearch() {
   setTimeout(() => document.getElementById('book-search-input')?.focus(), 300);
 }
 
+// v3.3.19: searchInBook used to split each chapter's raw text with its own
+// standalone regex, independent of wrapSentences()'s real (and, as of
+// v3.3.18, nested-block/chat-scene-aware) splitting logic. The two didn't
+// produce the same sentence boundaries, so a result's sentenceIdx pointed at
+// the wrong entry in the real sentences[]/sentenceEls[] once the chapter
+// loaded - clicking a result could land on a completely unrelated sentence
+// (confirmed: correct chapter, wrong sentence highlighted). Fix: reuse
+// wrapSentences() itself against a detached, off-screen copy of the chapter
+// so indices are always identical to the real ones - not a reimplementation
+// that could drift out of sync again. Off-screen (not display:none /
+// visibility:hidden) because innerText needs layout to compute, same iOS
+// quirk worked around for prewarm text extraction in v3.3.13. The live
+// sentences/sentenceEls globals are saved and restored around the call so
+// this never disturbs whatever chapter is actually on screen.
+let chapterSentenceCache = {};
+let chapterSentenceCacheBook = null;
+function getChapterSentencesForSearch(chIdx) {
+  if (chapterSentenceCacheBook !== bookTitle) {
+    chapterSentenceCache = {};
+    chapterSentenceCacheBook = bookTitle;
+  }
+  if (chapterSentenceCache[chIdx]) return chapterSentenceCache[chIdx];
+
+  const savedSentences = sentences, savedSentenceEls = sentenceEls;
+  const tmp = document.createElement('div');
+  tmp.style.cssText = 'position:absolute;left:-9999px;top:0;width:600px';
+  tmp.innerHTML = chapters[chIdx].html;
+  document.body.appendChild(tmp);
+  wrapSentences(tmp);
+  const result = sentences.slice();
+  document.body.removeChild(tmp);
+  sentences = savedSentences;
+  sentenceEls = savedSentenceEls;
+
+  chapterSentenceCache[chIdx] = result;
+  return result;
+}
+
 function searchInBook(query) {
   const el = document.getElementById('search-results');
   const countEl = document.getElementById('search-count');
@@ -3293,13 +3331,12 @@ function searchInBook(query) {
   searchResults = [];
   const q = lastSearchQuery.toLowerCase();
 
-  // Search all chapters
+  // Search all chapters. Cheap plain-text pre-check first - the expensive
+  // DOM-based split only runs for chapters that actually contain a match
+  // (typically a small handful, not the whole book on every keystroke).
   chapters.forEach((ch, chIdx) => {
-    const text = ch.text;
-    const textLower = text.toLowerCase();
-    // Split into sentences for context
-    const sents = text.match(/[^.!?…]+[.!?…]*["'\u2019\u201d]?\s*/g) || [text];
-    let charPos = 0;
+    if (!ch.text.toLowerCase().includes(q)) return;
+    const sents = getChapterSentencesForSearch(chIdx);
     sents.forEach((sent, sIdx) => {
       const sentLower = sent.toLowerCase();
       let pos = sentLower.indexOf(q);
@@ -3314,7 +3351,6 @@ function searchInBook(query) {
         });
         pos = sentLower.indexOf(q, pos + 1);
       }
-      charPos += sent.length;
     });
   });
 
@@ -5070,4 +5106,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.18 | built 2026-07-15 -->
+<!-- Bookvoice v3.3.19 | built 2026-07-16 -->
