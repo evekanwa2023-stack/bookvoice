@@ -1947,6 +1947,59 @@ function applyPronunciation(text) {
   let t = text;
   // Strip footnote markers: [1], [2], (1), etc.
   t = t.replace(/\s*\[\d+\]/g, '').replace(/\s*\(\d+\)/g, '');
+  // v3.3.20: "Dr." was read as spelled-out letters ("D, R") instead of
+  // "Doctor" (reported: "Dr. Pepper" in "Life to My Flight"). TTS abbreviation
+  // expansion needs the surrounding sentence for context, but
+  // wrapSentences()/buildParagraphs() can split a sentence right after "Dr."
+  // (it ends in a period, same as end-of-sentence punctuation), landing it
+  // alone at the end of one TTS request with the following word pushed into
+  // the next - with no name attached in that request, the engine falls back
+  // to spelling it out. "Mrs." confirmed with the exact same symptom next.
+  // Rather than patch one title at a time and wait for the next bug report,
+  // scanned the actual text of all 155 books in this user's Lani Lynn Vale
+  // library for every "Capitalized. Word" abbreviation pattern before
+  // deciding what belongs in this table - each entry below has confirmed,
+  // real usage: Dr. (819x), Mr. (776x), Mrs. (415x), Ms. (299x, always
+  // "Ms. <name>"), St. (72x, almost entirely the surname "St. James" or
+  // "St. Augustine"), Jr./Sr. (30x combined, always a name suffix).
+  // Deliberately left OUT a first pass of military/professional titles
+  // (Capt./Lt./Sgt./Col./Gen./Rev./Sen./Gov./Adm./Maj./Prof.) after actually
+  // checking: none occur even once in this library except "Gen." - which
+  // turned out to be a recurring character's own nickname ("Hi, Gen," /
+  // "All right, Gen."), not "General". Expanding that would have wrongly
+  // renamed a character mid-book. Lesson applied: only add an abbreviation
+  // here once it's confirmed to actually appear as a title and not collide
+  // with a name/nickname - not just because it "seems common." Case-
+  // sensitive and word-boundary anchored either way, so none of these touch
+  // all-caps acronyms ("MC", "ER" - both correctly read as letters already)
+  // or the middle of unrelated words ("Drought.").
+  //
+  // "Dr."/"St." are genuinely ambiguous words (Doctor/Drive, Saint/Street) -
+  // the only two entries in this table with that risk. A full-library scan
+  // found exactly 4 real address-style uses out of 821 combined Dr./St.
+  // occurrences: "505 Lakeside Dr." (Keys To My Cuffs), "Freedom Dr."
+  // (Code 11 KPD SWAT box set), and "Second St." x2 (Boomtown). Fixed as
+  // exact-phrase exceptions here (run first) rather than a general rule,
+  // since there's no reliable way to tell "Drive" from "Doctor" from the
+  // text alone - add another row here if a specific address line turns up
+  // misread in some other book.
+  const ADDRESS_EXCEPTIONS = [
+    ['505 Lakeside Dr.', '505 Lakeside Drive'],
+    ['Freedom Dr.', 'Freedom Drive'],
+    ['Second St.', 'Second Street']
+  ];
+  for (const [find, replace] of ADDRESS_EXCEPTIONS) {
+    const escaped = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    t = t.replace(new RegExp(escaped, 'g'), replace);
+  }
+  const TITLE_EXPANSIONS = [
+    ['Dr.', 'Doctor'], ['Mr.', 'Mister'], ['Mrs.', 'Missus'], ['Ms.', 'Miz'],
+    ['St.', 'Saint'], ['Jr.', 'Junior'], ['Sr.', 'Senior']
+  ];
+  for (const [abbrev, full] of TITLE_EXPANSIONS) {
+    const escaped = abbrev.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    t = t.replace(new RegExp('\\b' + escaped, 'g'), full);
+  }
   const active = pronounceRules.filter(r => r.scope === 'global' || r.book === bookTitle);
   for (const rule of active) {
     if (!rule.find) continue;
@@ -5106,4 +5159,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.19 | built 2026-07-16 -->
+<!-- Bookvoice v3.3.21 | built 2026-07-16 -->
