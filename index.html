@@ -1828,6 +1828,22 @@ function seekClick(e,bar) {
 // firstParagraphTextFromElement. All three must agree (see handoff).
 const BLOCK_SEL='p,li,h1,h2,h3,h4,blockquote';
 
+// v3.3.23: shared list of title abbreviations - used both to expand them to
+// full words before TTS (applyPronunciation) and to stop splitSent() from
+// treating their period as a sentence boundary. Previously only the
+// pronunciation side was fixed (v3.3.20/21): "Dr. Chen" correctly said
+// "Doctor" but splitSent still cut it into two separate sentences ("Dr." /
+// "Chen..."), which could land in two different TTS paragraph requests -
+// synthesized as two separate audio clips and played back-to-back, so it
+// said "Doctor" then paused before "Chen" even though the word itself was
+// right. Fixed at the source: these two behaviors must stay in sync, so they
+// now read from one shared constant instead of two separate lists that
+// could drift apart.
+const TITLE_ABBREVS = [
+  ['Dr.', 'Doctor'], ['Mrs.', 'Missus'], ['Mr.', 'Mister'], ['Ms.', 'Miz'],
+  ['St.', 'Saint'], ['Jr.', 'Junior'], ['Sr.', 'Senior']
+];
+
 function wrapSentences(container) {
   sentences=[]; sentenceEls=[];
   const blocks=container.querySelectorAll(BLOCK_SEL);
@@ -1882,7 +1898,44 @@ function wrapSentences(container) {
     });
   });
 }
-function splitSent(text){return(text.match(/[^.!?…]+[.!?…]*["\u2019\u201d]?\s*/g)||[text]).map(s=>s.trim()).filter(Boolean);}
+// v3.3.22: splitSent() split on ANY period/!/? regardless of what follows,
+// so text with a period glued directly to the next character with no space
+// (URLs/domain stamps like "OceanofPDF.com", decimals like "3.14") got cut
+// into two separate sentence chunks - then wrapSentences() joins chunks with
+// a literal space when building spans, so the rendered text showed an
+// inserted space that isn't in the source ("OceanofPDF. com"). A real
+// sentence-ending punctuation mark is always followed by whitespace, a
+// closing quote, or end of string - never immediately by a letter/digit - so
+// mask (don't split on) a terminator when a letter/digit follows with zero
+// space, then restore the exact original character afterward.
+//
+// v3.3.23: also mask a title abbreviation's period (TITLE_ABBREVS, shared
+// with applyPronunciation - see note above BLOCK_SEL) regardless of what
+// follows it. "Dr. Chen" was still being cut into two sentences ("Dr." /
+// "Chen...") even after v3.3.20/21 made the TEXT say "Doctor" correctly -
+// the two pieces could land in two different buildParagraphs() groups and
+// get synthesized as two separate TTS clips, so playback said "Doctor" then
+// audibly paused before "Chen". Both maskings run in a SINGLE regex pass
+// (not two sequential .replace() calls) so the saved-character queue stays
+// in left-to-right order matching the final string - doing this as two
+// separate passes could reorder relative to each other and restore the
+// wrong character at a given placeholder.
+const _NO_SPLIT_ABBREV_RE = new RegExp(
+  '\\b(?:' + TITLE_ABBREVS.map(([a]) => a.slice(0, -1)).join('|') + ')(\\.)|([.!?])(?=[a-zA-Z0-9])',
+  'g'
+);
+function splitSent(text){
+  const saved=[];
+  const PLACEHOLDER='\u0001'; // explicit char, not an empty regex - avoids //g comment-vs-regex ambiguity
+  const masked=text.replace(_NO_SPLIT_ABBREV_RE,(m,abbrevDot,gluedCh)=>{
+    const ch=abbrevDot||gluedCh;
+    saved.push(ch);
+    return m.slice(0,-1)+PLACEHOLDER;
+  });
+  const raw=masked.match(/[^.!?…]+[.!?…]*["’”]?\s*/g)||[masked];
+  let i=0;
+  return raw.map(s=>s.replace(/\u0001/g,()=>saved[i++]).trim()).filter(Boolean);
+}
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 // ── PARAGRAPH-LEVEL PLAYBACK (no gaps between sentences) ──
@@ -1992,11 +2045,10 @@ function applyPronunciation(text) {
     const escaped = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     t = t.replace(new RegExp(escaped, 'g'), replace);
   }
-  const TITLE_EXPANSIONS = [
-    ['Dr.', 'Doctor'], ['Mr.', 'Mister'], ['Mrs.', 'Missus'], ['Ms.', 'Miz'],
-    ['St.', 'Saint'], ['Jr.', 'Junior'], ['Sr.', 'Senior']
-  ];
-  for (const [abbrev, full] of TITLE_EXPANSIONS) {
+  // v3.3.23: now reads from the shared TITLE_ABBREVS constant (see note
+  // above BLOCK_SEL) instead of its own local copy, so this list and
+  // splitSent()'s no-split list can never drift out of sync again.
+  for (const [abbrev, full] of TITLE_ABBREVS) {
     const escaped = abbrev.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     t = t.replace(new RegExp('\\b' + escaped, 'g'), full);
   }
@@ -5159,4 +5211,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.21 | built 2026-07-16 -->
+<!-- Bookvoice v3.3.23 | built 2026-07-18 -->
