@@ -1844,11 +1844,40 @@ const TITLE_ABBREVS = [
   ['St.', 'Saint'], ['Jr.', 'Junior'], ['Sr.', 'Senior']
 ];
 
+// v3.3.24: getChapterSentencesForSearch() builds its search index against a
+// detached, off-screen div, then wrapSentences() there used block.innerText
+// to read the text - but innerText is a *layout-dependent* property (needs a
+// completed render/reflow to compute; explicitly called out as an "iOS
+// quirk" risk in the comment above getChapterSentencesForSearch, and as a
+// known residual-mismatch risk in firstParagraphTextFromElement below).
+// Confirmed symptom: a plain "Dr. Chen said, patting Miller on the back."
+// paragraph read correctly as ONE sentence in the live, already-laid-out
+// reader, but came back from the search index as TWO separate sentences
+// ("Dr." / "Chen said..."), breaking combined-phrase search and truncating
+// single-word results. blockText() reads text by walking the DOM directly
+// instead of asking the layout engine, so it can never differ between a
+// freshly-appended detached div and the live on-screen one. <br> is mapped
+// to a space (matching innerText's visual line-break behavior) so address/
+// poetry-style line breaks don't glue words together the way plain
+// textContent would.
+function blockText(el){
+  let out='';
+  const walk=(node)=>{
+    if(node.nodeType===Node.TEXT_NODE){ out+=node.textContent; }
+    else if(node.nodeType===1){
+      if(node.tagName==='BR'){ out+=' '; }
+      else { [...node.childNodes].forEach(walk); }
+    }
+  };
+  [...el.childNodes].forEach(walk);
+  return out;
+}
+
 function wrapSentences(container) {
   sentences=[]; sentenceEls=[];
   const blocks=container.querySelectorAll(BLOCK_SEL);
   if(!blocks.length){
-    const t=container.innerText.trim();
+    const t=blockText(container).trim();
     if(t){sentences.push(t);container.innerHTML=`<span class="sentence" data-si="0">${escHtml(t)}</span>`;}
   } else {
     blocks.forEach(block=>{
@@ -1874,7 +1903,7 @@ function wrapSentences(container) {
         });
         return;
       }
-      const t=block.innerText.trim(); if(!t) return;
+      const t=blockText(block).trim(); if(!t) return;
       const parts=splitSent(t);
       block.innerHTML=parts.map(s=>`<span class="sentence">${escHtml(s)}</span>`).join(' ');
     });
@@ -2250,7 +2279,7 @@ function firstParagraphTextFromElement(root, fallbackText) {
       // paragraphs[0].text guard in playFrom() degrades any mismatch to a
       // fresh fetch, never a desync.
       if (block.querySelector(BLOCK_SEL)) continue;
-      const t = (block.innerText || block.textContent || '').trim(); // wrapSentences uses innerText
+      const t = (blockText(block) || block.textContent || '').trim(); // wrapSentences uses blockText() - v3.3.24
       if (!t) continue;
       sents.push(...splitSent(t));
       if (sents.length >= GROUP) break;
@@ -5211,4 +5240,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.23 | built 2026-07-18 -->
+<!-- Bookvoice v3.3.24 | built 2026-07-18 -->
