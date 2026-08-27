@@ -108,6 +108,10 @@ header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1
 .sheet-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;border-bottom:1px solid var(--border);font-size:14px;font-weight:500;flex-shrink:0}
 .sheet-close{background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1}
 .sheet-body{overflow-y:auto;flex:1;padding:8px 0}
+/* Drive browser */
+.drive-folder-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .12s}
+.drive-folder-item:hover{background:var(--surface2)}
+.drive-section-hdr{padding:6px 16px 2px;font-size:10px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase}
 /* chapter items in drawer */
 .drawer-ch{padding:12px 20px;font-size:14px;color:var(--muted);cursor:pointer;border-left:3px solid transparent;transition:all .1s;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .drawer-ch:hover{background:var(--surface2);color:var(--text)}
@@ -372,6 +376,7 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
     <span class="lib-title">📚 My Library</span>
     <span id="drive-status-dot" style="font-size:11px;color:var(--muted);cursor:pointer" onclick="checkDriveStatus()" title="Drive sync status"></span>
     <button class="hbtn" onclick="document.getElementById('lib-file-input').click()">+ Add EPUB</button>
+    <button class="hbtn" onclick="openDriveBrowser()" title="Browse Google Drive for an EPUB">☁️ Drive</button>
     <button class="hbtn" onclick="openSheet('lib-options-sheet')">⚙</button>
   </div>
   <div class="lib-view-tabs">
@@ -379,12 +384,22 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
     <div class="lib-tab" id="tab-series" onclick="setLibView('series')">By Series</div>
     <div class="lib-tab" id="tab-author" onclick="setLibView('author')">By Author</div>
   </div>
-  <div class="lib-search"><input type="text" placeholder="🔍 Search books..." oninput="filterLibrary(this.value)" id="lib-search-input"></div>
+  <div class="lib-search" style="display:flex;gap:8px;align-items:center">
+    <input type="text" placeholder="🔍 Search books..." oninput="filterLibrary(this.value)" id="lib-search-input" style="flex:1">
+    <select id="lib-sort-sel" onchange="setLibSort(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:8px 6px;font-family:inherit;outline:none;flex-shrink:0">
+      <option value="added-desc">Recently Added</option>
+      <option value="added-asc">Oldest Added</option>
+      <option value="read-desc">Recently Read</option>
+      <option value="name-asc">Name A→Z</option>
+      <option value="name-desc">Name Z→A</option>
+    </select>
+  </div>
   <div class="lib-scroll" id="lib-scroll">
     <div class="lib-empty" id="lib-empty">
       <div class="drop-ring">📚</div>
       <p>No books yet.<br>Tap + Add EPUB to get started.</p>
       <button class="btn" style="justify-content:center" onclick="document.getElementById('lib-file-input').click()">+ Add EPUB</button>
+      <button class="btn" style="justify-content:center" onclick="openDriveBrowser()">☁️ Browse Google Drive</button>
     </div>
   </div>
 </div>
@@ -622,8 +637,6 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
             <option value="en-US-EmmaNeural">Emma (F)</option>
             <option value="en-US-JennyNeural">Jenny (F)</option>
             <option value="en-US-GuyNeural">Guy (M)</option>
-            <option value="en-US-AvaMultilingualNeural">Ava Multilingual (F) — better with foreign names</option>
-            <option value="en-US-AndrewMultilingualNeural">Andrew Multilingual (M) — better with foreign names</option>
           </select>
         </div>
         <div class="setting-row" id="zh-voice-row" style="display:none;padding:10px 20px">
@@ -661,6 +674,35 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
     </div>
     <div style="padding:8px 12px;font-size:11px;color:var(--muted)" id="search-count"></div>
     <div class="sheet-body" id="search-results" style="padding:0"></div>
+  </div>
+</div>
+
+<!-- GOOGLE DRIVE BROWSER SHEET -->
+<div class="overlay" id="drive-browser-sheet">
+  <div class="overlay-bg" onclick="closeDriveBrowser()"></div>
+  <div class="sheet" style="max-height:85vh">
+    <div class="sheet-head">
+      <span id="drive-browser-title">📁 My Drive</span>
+      <button class="sheet-close" onclick="closeDriveBrowser()">×</button>
+    </div>
+    <div style="padding:6px 12px 0;display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <span id="drive-browser-account" style="font-size:11px;color:var(--muted)"></span>
+      <button class="btn ghost" style="padding:4px 10px;font-size:11px" onclick="switchDriveBrowseAccount()">🔁 Switch account</button>
+    </div>
+    <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center">
+      <input type="text" id="drive-folder-search" placeholder="🔍 Search Drive..."
+        oninput="filterDriveFolders()"
+        style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;outline:none"
+        autocorrect="off" autocapitalize="off">
+      <select id="drive-folder-sort" onchange="applyDriveFolderSort()"
+        style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 6px;color:var(--text);font-size:12px">
+        <option value="name-asc">Name A→Z</option>
+        <option value="name-desc">Name Z→A</option>
+        <option value="date-desc">Newest</option>
+        <option value="date-asc">Oldest</option>
+      </select>
+    </div>
+    <div class="sheet-body" id="drive-folder-list" style="padding:0"></div>
   </div>
 </div>
 
@@ -798,7 +840,17 @@ window.addEventListener('DOMContentLoaded', () => {
   updateVoiceRowVisibility();
   if (serverUrl) {
     startConnectionMonitor();
-    if (library.length > 0) { showLibrary(); }
+    // If the user was in the reader (not Library) when they last refreshed,
+    // reopen the same book straight into the reader instead of always
+    // dropping to Library (v3.3.5). Falls back to the old behavior if the
+    // book can't be matched (e.g. it was removed from the library).
+    const lastScreen = localStorage.getItem('bv_screen');
+    const pos = loadSavedPos();
+    const resumeIdx = (lastScreen === 'reader' && pos && pos.book)
+      ? library.findIndex(b => b.title === pos.book)
+      : -1;
+    if (resumeIdx >= 0) { openBookFromLibrary(resumeIdx); }
+    else if (library.length > 0) { showLibrary(); }
     else { showResumeBanner(); showApp(); }
   }
   // Try silent Drive re-auth if previously connected
@@ -814,35 +866,45 @@ async function requestWakeLock() {
 }
 function releaseWakeLock() { if (wakeLock) { wakeLock.release(); wakeLock = null; } }
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible') {
-    if (isPlaying) await requestWakeLock();
-    if (isPlaying && !isStopped && bgAudio) {
-      // If audio ended while backgrounded, it will naturally resolve the promise
-      // If it's paused (iOS suspended), resume it
-      if (bgAudio.paused && bgAudio.src && bgAudio.readyState >= 2) {
-        try { await bgAudio.play(); } catch(e) {}
-      }
-      // If audio src is empty (somehow lost), restart from current sentence
-      if (!bgAudio.src || bgAudio.src === window.location.href) {
-        stopAudio();
-        setTimeout(() => {
-          if (!isStopped) {
-            isPlaying = true;
-            isStopped = false;
-            document.getElementById('play-btn').textContent = '⏸';
-            playFrom(sentenceIndex);
-          }
-        }, 300);
-      }
-    }
-  }
+  if (document.visibilityState !== 'visible') return;
+  if (isPlaying) await requestWakeLock();
+  resumePlaybackIfNeeded();
 });
 
-window.addEventListener('pageshow', async () => {
-  if (isPlaying && !isStopped && bgAudio && bgAudio.paused) {
-    try { await bgAudio.play(); } catch(e) {}
+window.addEventListener('pageshow', () => resumePlaybackIfNeeded());
+
+// v3.3.16 — single recovery path when the page returns to the foreground.
+// Fixes the "page shows the new chapter but voice repeats the previous
+// chapter's last sentence" bug: the old handler blindly called play() on the
+// persistent audio element whenever it was paused — but at a stalled chapter
+// boundary that element still holds the OLD chapter's last paragraph in the
+// 'ended' state, and play() on an ended element REWINDS AND REPLAYS IT.
+// (The old "restart" fallback here was also dead code: stopAudio() sets
+// isStopped=true, then the timeout checked !isStopped — never true.)
+function resumePlaybackIfNeeded() {
+  if (!isPlaying || isStopped || !bgAudio) return;
+  if (playFromActive) {
+    // The playback engine loop is still alive. If iOS merely suspended the
+    // audio mid-paragraph, resume it. If the audio has ENDED, do nothing —
+    // the loop is between paragraphs/chapters and its suspended awaits will
+    // pick up now that we're foregrounded; replaying the ended blob is
+    // exactly the repeat-last-sentence bug.
+    if (bgAudio.paused && !bgAudio.ended && bgAudio.src && bgAudio.readyState >= 2) {
+      bgAudio.play().catch(() => {});
+    }
+    return;
   }
-});
+  // Engine is dead but we're supposed to be playing — a chapter transition
+  // failed while backgrounded (play() rejected / fetch suspended). Restart
+  // cleanly from the current position instead of poking the stale element.
+  stopAudio();
+  setTimeout(() => {
+    if (!isPlaying) return; // user hit pause in the meantime
+    isStopped = false;
+    document.getElementById('play-btn').textContent = '⏸';
+    playFrom(sentenceIndex);
+  }, 300);
+}
 
 // ── MEDIA SESSION ──
 function setupMediaSession() {
@@ -872,23 +934,37 @@ function updateFurthest() {
 
 function savePosition() {
   if (!bookTitle) return;
-  updateFurthest();
-  localStorage.setItem('bv_pos', JSON.stringify({
-    book: bookTitle,
-    // current = where you are right now (could be rereading earlier chapter)
-    chapter: currentChapter,
-    sentence: sentenceIndex,
-    // furthest = the most advanced point you've ever reached
-    furthestChapter,
-    furthestSentence,
-    ts: Date.now()
-  }));
-  // Save to Drive every 5 sentences
-  updateLibraryProgress();
-  if (sentenceIndex % 5 === 0) gdriveSavePosition();
+  // Never let a storage hiccup here throw uncaught — loadChapter() calls this
+  // at the end of every chapter load (v3.3.5), and an uncaught exception
+  // would reject loadChapter()'s promise. During chapter auto-advance that
+  // silently killed playback: `await loadChapter(...); playFrom(0);` never
+  // reaches playFrom() if the await rejects (v3.3.11).
+  try {
+    updateFurthest();
+    localStorage.setItem('bv_pos', JSON.stringify({
+      book: bookTitle,
+      // current = where you are right now (could be rereading earlier chapter)
+      chapter: currentChapter,
+      sentence: sentenceIndex,
+      // furthest = the most advanced point you've ever reached
+      furthestChapter,
+      furthestSentence,
+      ts: Date.now()
+    }));
+    // Save to Drive every 5 sentences
+    updateLibraryProgress();
+    if (sentenceIndex % 5 === 0) gdriveSavePosition();
+  } catch(e) {}
 }
 function loadSavedPos() { try { return JSON.parse(localStorage.getItem('bv_pos')); } catch { return null; } }
 function clearSavedPos() { localStorage.removeItem('bv_pos'); }
+
+// Tracks which screen the user was actually looking at (reader vs library) so
+// a refresh can put them back where they were instead of always dropping to
+// the Library screen (v3.3.5). Set on every screen transition; checked once
+// on DOMContentLoaded.
+function markReaderScreen(){ localStorage.setItem('bv_screen','reader'); }
+function markLibraryScreen(){ localStorage.setItem('bv_screen','library'); }
 
 // ── SETUP SCREEN ──
 function showResumeBanner() {
@@ -1183,6 +1259,7 @@ async function loadEpub(file) {
     const meta = parseEpubFilename(file.name);
     // Save to epubCache and library
     epubCache[bookTitle] = { chapters, epubZip: zip };
+    idbSaveBook(bookTitle, chapters); // persist for instant reopen later
     const existingIdx = library.findIndex(b => b.title === bookTitle);
     if (existingIdx >= 0) {
       library[existingIdx].totalChapters = chapters.length;
@@ -1194,8 +1271,11 @@ async function loadEpub(file) {
       }
     } else {
       library.unshift({ title: bookTitle, totalChapters: chapters.length, chapter: 0, sentence: 0,
-        author: meta.author, series: meta.series, seriesNum: meta.seriesNum });
+        author: meta.author, series: meta.series, seriesNum: meta.seriesNum, addedAt: Date.now() });
     }
+    // Importing opens straight into the reader, so this counts as "opened" too
+    const openedNow = library.find(b => b.title === bookTitle);
+    if (openedNow) openedNow.lastOpenedAt = Date.now();
     saveLibrary();
     // Upload to Drive in background (don't await — don't block reading)
     if (gdriveEnabled && isTokenValid()) driveUploadEpub(file, bookTitle);
@@ -1207,6 +1287,7 @@ async function loadEpub(file) {
     document.getElementById('library-screen').style.display='none';
     document.getElementById('setup-screen').style.display='none';
     document.getElementById('app').style.display='flex';
+    markReaderScreen();
     buildSidebar(); buildDownloadList(); setupMediaSession();
     if (pendingResume && pendingResume.book===bookTitle) {
       loadChapter(pendingResume.chapter);
@@ -1319,6 +1400,7 @@ async function loadChapterInto(i, targetDiv) {
 
 async function loadChapter(i) {
   currentChapter = i; sentenceIndex = 0;
+  pruneAudioCache(i); // drop cached audio from other chapters, keep this one's
   userScrolled = false;
   if (userScrollTimer) { clearTimeout(userScrollTimer); userScrollTimer = null; }
   setSidebarActive(i);
@@ -1357,8 +1439,19 @@ async function loadChapter(i) {
     if (el.id !== 'prerender-ch-' + (i + 1)) el.remove();
   });
 
-  // Scroll to top after render
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  // Scroll to top after render.
+  // requestAnimationFrame never fires while the tab is backgrounded (e.g. iOS
+  // Safari with the screen locked or another app in front) — awaiting it
+  // unconditionally used to hang here forever, which silently killed chapter
+  // auto-advance during background playback (loadChapter() never returned,
+  // so the next chapter's playFrom() was never reached). Race it against a
+  // timeout so this always resolves, backgrounded or not.
+  await new Promise(r => {
+    let done = false;
+    const finish = () => { if (done) return; done = true; r(); };
+    requestAnimationFrame(() => requestAnimationFrame(finish));
+    setTimeout(finish, 300);
+  });
   isProgrammaticScroll = true;
   scroller.style.scrollBehavior = 'auto';
   scroller.scrollTop = 0;
@@ -1366,6 +1459,14 @@ async function loadChapter(i) {
 
   // Background preload next chapters
   if (langMode !== 'orig') startBgTranslate(i + 1);
+
+  // Background preload this chapter's audio so any tap/skip is instant
+  preloadChapterAudio(i).catch(() => {});
+
+  // Record position even if the user never presses play — otherwise jumping
+  // to a chapter without playing wasn't persisted anywhere, so reopening the
+  // book (or the reader-resume fix below) would drop back to an old chapter.
+  savePosition();
 }
 
 async function loadChapterTranslated(chIdx, body) {
@@ -1386,7 +1487,11 @@ async function loadChapterTranslated(chIdx, body) {
   tempDiv.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
   tempDiv.innerHTML = chapters[chIdx].html;
   document.body.appendChild(tempDiv);
-  const blockEls = [...tempDiv.querySelectorAll('p,li,h1,h2,h3,h4,blockquote')];
+  // v3.3.18: leaf blocks only — nested chat wrappers duplicated every message
+  // in translation mode too (parent block's text = all messages, then each
+  // child again). Known minor gap: direct text sitting in a wrapper block
+  // outside its child blocks is skipped in translation mode (rare in practice).
+  const blockEls = [...tempDiv.querySelectorAll(BLOCK_SEL)].filter(el => !el.querySelector(BLOCK_SEL));
   document.body.removeChild(tempDiv);
 
   const total = blockEls.length || 1;
@@ -1737,21 +1842,97 @@ function seekClick(e,bar) {
 }
 
 // ── SENTENCES ──
+// v3.3.18 — selector shared by wrapSentences / loadChapterTranslated /
+// firstParagraphTextFromElement. All three must agree (see handoff).
+const BLOCK_SEL='p,li,h1,h2,h3,h4,blockquote';
+
+// v3.3.23: shared list of title abbreviations - used both to expand them to
+// full words before TTS (applyPronunciation) and to stop splitSent() from
+// treating their period as a sentence boundary. Previously only the
+// pronunciation side was fixed (v3.3.20/21): "Dr. Chen" correctly said
+// "Doctor" but splitSent still cut it into two separate sentences ("Dr." /
+// "Chen..."), which could land in two different TTS paragraph requests -
+// synthesized as two separate audio clips and played back-to-back, so it
+// said "Doctor" then paused before "Chen" even though the word itself was
+// right. Fixed at the source: these two behaviors must stay in sync, so they
+// now read from one shared constant instead of two separate lists that
+// could drift apart.
+const TITLE_ABBREVS = [
+  ['Dr.', 'Doctor'], ['Mrs.', 'Missus'], ['Mr.', 'Mister'], ['Ms.', 'Miz'],
+  ['St.', 'Saint'], ['Jr.', 'Junior'], ['Sr.', 'Senior']
+];
+
+// v3.3.24: getChapterSentencesForSearch() builds its search index against a
+// detached, off-screen div, then wrapSentences() there used block.innerText
+// to read the text - but innerText is a *layout-dependent* property (needs a
+// completed render/reflow to compute; explicitly called out as an "iOS
+// quirk" risk in the comment above getChapterSentencesForSearch, and as a
+// known residual-mismatch risk in firstParagraphTextFromElement below).
+// Confirmed symptom: a plain "Dr. Chen said, patting Miller on the back."
+// paragraph read correctly as ONE sentence in the live, already-laid-out
+// reader, but came back from the search index as TWO separate sentences
+// ("Dr." / "Chen said..."), breaking combined-phrase search and truncating
+// single-word results. blockText() reads text by walking the DOM directly
+// instead of asking the layout engine, so it can never differ between a
+// freshly-appended detached div and the live on-screen one. <br> is mapped
+// to a space (matching innerText's visual line-break behavior) so address/
+// poetry-style line breaks don't glue words together the way plain
+// textContent would.
+function blockText(el){
+  let out='';
+  const walk=(node)=>{
+    if(node.nodeType===Node.TEXT_NODE){ out+=node.textContent; }
+    else if(node.nodeType===1){
+      if(node.tagName==='BR'){ out+=' '; }
+      else { [...node.childNodes].forEach(walk); }
+    }
+  };
+  [...el.childNodes].forEach(walk);
+  return out;
+}
+
 function wrapSentences(container) {
   sentences=[]; sentenceEls=[];
-  const blocks=container.querySelectorAll('p,li,h1,h2,h3,h4,blockquote');
+  const blocks=container.querySelectorAll(BLOCK_SEL);
   if(!blocks.length){
-    const t=container.innerText.trim();
+    const t=blockText(container).trim();
     if(t){sentences.push(t);container.innerHTML=`<span class="sentence" data-si="0">${escHtml(t)}</span>`;}
   } else {
     blocks.forEach(block=>{
-      const t=block.innerText.trim(); if(!t) return;
+      // v3.3.18: chat/texting scenes are NESTED blocks (this book:
+      // <blockquote> wrapping every message <p>). querySelectorAll returns
+      // BOTH parent and children, so the old code pushed the chat text into
+      // sentences[] twice (parent innerText = all messages, then each child
+      // again) — audio read chat scenes twice, and the children's spans never
+      // landed in the DOM (parent innerHTML replacement destroyed them), so
+      // sentences[] and sentenceEls[] went permanently out of sync for the
+      // rest of the chapter (highlight on a different sentence than the
+      // voice). Container blocks now get only their DIRECT text nodes
+      // wrapped; nested blocks are processed on their own visit — every piece
+      // of text enters exactly once and chat formatting is preserved.
+      if(!container.contains(block)) return; // safety: detached
+      if(block.querySelector(BLOCK_SEL)){
+        [...block.childNodes].forEach(node=>{
+          if(node.nodeType!==Node.TEXT_NODE) return;
+          const t=node.textContent.trim(); if(!t) return;
+          const holder=document.createElement('span');
+          holder.innerHTML=splitSent(t).map(s=>`<span class="sentence">${escHtml(s)}</span>`).join(' ');
+          node.replaceWith(...holder.childNodes);
+        });
+        return;
+      }
+      const t=blockText(block).trim(); if(!t) return;
       const parts=splitSent(t);
-      block.innerHTML=parts.map((s,j)=>`<span class="sentence" data-si="${sentences.length+j}">${escHtml(s)}</span>`).join(' ');
-      sentences.push(...parts);
+      block.innerHTML=parts.map(s=>`<span class="sentence">${escHtml(s)}</span>`).join(' ');
     });
   }
   sentenceEls=[...container.querySelectorAll('.sentence')];
+  // v3.3.18: canonical sentence list rebuilt from DOM order — guarantees
+  // sentences[i] ↔ sentenceEls[i] stay aligned no matter how blocks nest.
+  if(blocks.length){
+    sentences=sentenceEls.map(el=>el.textContent);
+    sentenceEls.forEach((el,i)=>{ el.dataset.si=i; });
+  }
   sentenceEls.forEach((el,i)=>{
     el.addEventListener('click',()=>{
       // Stop everything first, wait for it to fully stop, then start new
@@ -1764,7 +1945,44 @@ function wrapSentences(container) {
     });
   });
 }
-function splitSent(text){return(text.match(/[^.!?…]+[.!?…]*["\u2019\u201d]?\s*/g)||[text]).map(s=>s.trim()).filter(Boolean);}
+// v3.3.22: splitSent() split on ANY period/!/? regardless of what follows,
+// so text with a period glued directly to the next character with no space
+// (URLs/domain stamps like "OceanofPDF.com", decimals like "3.14") got cut
+// into two separate sentence chunks - then wrapSentences() joins chunks with
+// a literal space when building spans, so the rendered text showed an
+// inserted space that isn't in the source ("OceanofPDF. com"). A real
+// sentence-ending punctuation mark is always followed by whitespace, a
+// closing quote, or end of string - never immediately by a letter/digit - so
+// mask (don't split on) a terminator when a letter/digit follows with zero
+// space, then restore the exact original character afterward.
+//
+// v3.3.23: also mask a title abbreviation's period (TITLE_ABBREVS, shared
+// with applyPronunciation - see note above BLOCK_SEL) regardless of what
+// follows it. "Dr. Chen" was still being cut into two sentences ("Dr." /
+// "Chen...") even after v3.3.20/21 made the TEXT say "Doctor" correctly -
+// the two pieces could land in two different buildParagraphs() groups and
+// get synthesized as two separate TTS clips, so playback said "Doctor" then
+// audibly paused before "Chen". Both maskings run in a SINGLE regex pass
+// (not two sequential .replace() calls) so the saved-character queue stays
+// in left-to-right order matching the final string - doing this as two
+// separate passes could reorder relative to each other and restore the
+// wrong character at a given placeholder.
+const _NO_SPLIT_ABBREV_RE = new RegExp(
+  '\\b(?:' + TITLE_ABBREVS.map(([a]) => a.slice(0, -1)).join('|') + ')(\\.)|([.!?])(?=[a-zA-Z0-9])',
+  'g'
+);
+function splitSent(text){
+  const saved=[];
+  const PLACEHOLDER='\u0001'; // explicit char, not an empty regex - avoids //g comment-vs-regex ambiguity
+  const masked=text.replace(_NO_SPLIT_ABBREV_RE,(m,abbrevDot,gluedCh)=>{
+    const ch=abbrevDot||gluedCh;
+    saved.push(ch);
+    return m.slice(0,-1)+PLACEHOLDER;
+  });
+  const raw=masked.match(/[^.!?…]+[.!?…]*["’”]?\s*/g)||[masked];
+  let i=0;
+  return raw.map(s=>s.replace(/\u0001/g,()=>saved[i++]).trim()).filter(Boolean);
+}
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 // ── PARAGRAPH-LEVEL PLAYBACK (no gaps between sentences) ──
@@ -1829,6 +2047,58 @@ function applyPronunciation(text) {
   let t = text;
   // Strip footnote markers: [1], [2], (1), etc.
   t = t.replace(/\s*\[\d+\]/g, '').replace(/\s*\(\d+\)/g, '');
+  // v3.3.20: "Dr." was read as spelled-out letters ("D, R") instead of
+  // "Doctor" (reported: "Dr. Pepper" in "Life to My Flight"). TTS abbreviation
+  // expansion needs the surrounding sentence for context, but
+  // wrapSentences()/buildParagraphs() can split a sentence right after "Dr."
+  // (it ends in a period, same as end-of-sentence punctuation), landing it
+  // alone at the end of one TTS request with the following word pushed into
+  // the next - with no name attached in that request, the engine falls back
+  // to spelling it out. "Mrs." confirmed with the exact same symptom next.
+  // Rather than patch one title at a time and wait for the next bug report,
+  // scanned the actual text of all 155 books in this user's Lani Lynn Vale
+  // library for every "Capitalized. Word" abbreviation pattern before
+  // deciding what belongs in this table - each entry below has confirmed,
+  // real usage: Dr. (819x), Mr. (776x), Mrs. (415x), Ms. (299x, always
+  // "Ms. <name>"), St. (72x, almost entirely the surname "St. James" or
+  // "St. Augustine"), Jr./Sr. (30x combined, always a name suffix).
+  // Deliberately left OUT a first pass of military/professional titles
+  // (Capt./Lt./Sgt./Col./Gen./Rev./Sen./Gov./Adm./Maj./Prof.) after actually
+  // checking: none occur even once in this library except "Gen." - which
+  // turned out to be a recurring character's own nickname ("Hi, Gen," /
+  // "All right, Gen."), not "General". Expanding that would have wrongly
+  // renamed a character mid-book. Lesson applied: only add an abbreviation
+  // here once it's confirmed to actually appear as a title and not collide
+  // with a name/nickname - not just because it "seems common." Case-
+  // sensitive and word-boundary anchored either way, so none of these touch
+  // all-caps acronyms ("MC", "ER" - both correctly read as letters already)
+  // or the middle of unrelated words ("Drought.").
+  //
+  // "Dr."/"St." are genuinely ambiguous words (Doctor/Drive, Saint/Street) -
+  // the only two entries in this table with that risk. A full-library scan
+  // found exactly 4 real address-style uses out of 821 combined Dr./St.
+  // occurrences: "505 Lakeside Dr." (Keys To My Cuffs), "Freedom Dr."
+  // (Code 11 KPD SWAT box set), and "Second St." x2 (Boomtown). Fixed as
+  // exact-phrase exceptions here (run first) rather than a general rule,
+  // since there's no reliable way to tell "Drive" from "Doctor" from the
+  // text alone - add another row here if a specific address line turns up
+  // misread in some other book.
+  const ADDRESS_EXCEPTIONS = [
+    ['505 Lakeside Dr.', '505 Lakeside Drive'],
+    ['Freedom Dr.', 'Freedom Drive'],
+    ['Second St.', 'Second Street']
+  ];
+  for (const [find, replace] of ADDRESS_EXCEPTIONS) {
+    const escaped = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    t = t.replace(new RegExp(escaped, 'g'), replace);
+  }
+  // v3.3.23: now reads from the shared TITLE_ABBREVS constant (see note
+  // above BLOCK_SEL) instead of its own local copy, so this list and
+  // splitSent()'s no-split list can never drift out of sync again.
+  for (const [abbrev, full] of TITLE_ABBREVS) {
+    const escaped = abbrev.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    t = t.replace(new RegExp('\\b' + escaped, 'g'), full);
+  }
   const active = pronounceRules.filter(r => r.scope === 'global' || r.book === bookTitle);
   for (const rule of active) {
     if (!rule.find) continue;
@@ -2073,22 +2343,52 @@ async function safePlayAudio(audio, sessionId) {
   return false;
 }
 
-function firstReadableTextFromElement(root) {
-  if (!root) return '';
-  const parts = [];
-  root.querySelectorAll('h1,h2,h3,p,div').forEach(el => {
-    const t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
-    if (t.length >= 8 && !parts.includes(t)) parts.push(t);
-  });
-  return parts.slice(0, 2).join(' ').slice(0, 1800);
+// v3.3.17 — REPLACES firstReadableTextFromElement. The prewarmed blob used to
+// be built from a *different* extraction than what playFrom() actually plays:
+// first ~2 DOM blocks (selector even included bare `div`s) up to 1800 chars —
+// often 9+ sentences — while playFrom() plays paragraph 0, which is EXACTLY
+// GROUP=4 sentences from wrapSentences()+buildParagraphs(). Reusing that blob
+// meant the voice read far ahead of the 4-sentence highlight schedule, and
+// every later paragraph was audibly re-reading text the blob already voiced —
+// the long-standing "highlight doesn't follow after auto-advance until I tap
+// a sentence" bug. This replicates the wrapSentences() pipeline (same block
+// selector, same splitSent, same GROUP) so the prewarm text is byte-identical
+// to the future paragraphs[0].text. playFrom() also verifies the match before
+// adopting the blob, so any residual extraction difference (hidden-div
+// innerText quirks etc.) degrades to a fresh correct fetch, never a mismatch.
+function firstParagraphTextFromElement(root, fallbackText) {
+  const GROUP = 4; // must match buildParagraphs()
+  const sents = [];
+  if (root) {
+    const blocks = root.querySelectorAll(BLOCK_SEL); // same as wrapSentences()
+    for (const block of blocks) {
+      // v3.3.18: skip container blocks (nested chat wrappers) like
+      // wrapSentences does — their text would double-count the children's.
+      // Wrapper direct-text edge case not replicated here; the pre.text ===
+      // paragraphs[0].text guard in playFrom() degrades any mismatch to a
+      // fresh fetch, never a desync.
+      if (block.querySelector(BLOCK_SEL)) continue;
+      const t = (blockText(block) || block.textContent || '').trim(); // wrapSentences uses blockText() - v3.3.24
+      if (!t) continue;
+      sents.push(...splitSent(t));
+      if (sents.length >= GROUP) break;
+    }
+  }
+  if (!sents.length && fallbackText) sents.push(...splitSent(fallbackText.trim()));
+  return sents.slice(0, GROUP).join(' ');
 }
 
 async function prewarmNextChapterAudio(chIdx, preDiv) {
   try {
     if (chIdx >= chapters.length) return;
-    const txt = firstReadableTextFromElement(preDiv);
+    // Fallback only applies to the original language — translated text only
+    // exists in the DOM (preDiv), there's no pre-parsed plain-text version of it.
+    const fallback = langMode === 'orig' ? (chapters[chIdx]?.text || '') : '';
+    const txt = firstParagraphTextFromElement(preDiv, fallback);
     if (!txt) return;
-    nextChapterFirstAudioCache = { chapter: chIdx, promise: fetchAudioBlob(txt) };
+    // `text` is stored so playFrom() can verify it matches paragraphs[0].text
+    // before adopting the blob (v3.3.17).
+    nextChapterFirstAudioCache = { chapter: chIdx, text: txt, promise: fetchAudioBlob(txt) };
   } catch(e) {}
 }
 
@@ -2114,6 +2414,7 @@ function setLangMode(mode) {
   updateVoiceRowVisibility();
   translateCache = {};
   chapterTranslated = {};
+  clearAudioCacheAll(); // voice/text changes with language — old cached audio is stale
   if (bgTranslateController) bgTranslateController.aborted = true;
   const labels = {'orig':'Original','en':'English','th':'Thai','zh':'Chinese','zh-en':'Chinese → English','zh-th':'Chinese → Thai','zh-en-th':'Chinese → English → Thai'};
   showToast('Language: ' + (labels[mode] || mode));
@@ -2337,17 +2638,93 @@ async function fetchAudioBlob(text, retries = 1) {
   }
 }
 
+// ── PERSISTENT AUDIO CACHE ──
+// Caches fetched paragraph/sentence-entry audio so tapping/skipping to any
+// sentence already fetched (or preloaded) plays instantly, no refetch wait.
+// Key includes everything that changes the audio content, so stale entries
+// simply become unreachable rather than being served incorrectly.
+let audioCache = {};
+let audioPreloadToken = 0;
+
+function audioCacheKey(entrySentIdx) {
+  const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
+  return currentChapter + '|' + langMode + '|' + voice + '|' + speed + '|' + entrySentIdx;
+}
+
+// Reproduces the exact text playFrom() would fetch for a given entry sentence:
+// full paragraph text, unless entrySentIdx lands mid-paragraph (a tap/skip
+// into the middle), in which case it's trimmed to start exactly there.
+function textForEntry(entrySentIdx) {
+  const pIdx = findParagraphForSentence(entrySentIdx);
+  const para = paragraphs[pIdx];
+  if (!para) return '';
+  if (entrySentIdx > para.startIdx) {
+    return sentences.slice(entrySentIdx, para.startIdx + para.count).join(' ');
+  }
+  return para.text;
+}
+
+// Returns a Promise<blobUrl>, fetching only once per key — concurrent/
+// repeated calls for the same entry share the same in-flight request.
+function getCachedAudio(entrySentIdx) {
+  const key = audioCacheKey(entrySentIdx);
+  if (!audioCache[key]) {
+    const text = textForEntry(entrySentIdx);
+    audioCache[key] = fetchAudioBlob(text).catch(e => { delete audioCache[key]; throw e; });
+  }
+  return audioCache[key];
+}
+
+// Drop cached audio for every chapter except the one being kept, revoking
+// blob URLs so we don't leak memory across a long book.
+function pruneAudioCache(keepChapter) {
+  Object.keys(audioCache).forEach(key => {
+    const chIdx = parseInt(key.split('|')[0], 10);
+    if (chIdx !== keepChapter) {
+      const entry = audioCache[key];
+      delete audioCache[key];
+      Promise.resolve(entry).then(url => { try { URL.revokeObjectURL(url); } catch(e){} }).catch(()=>{});
+    }
+  });
+}
+
+// Full clear — used when langMode changes (voice/text baked into the audio changes).
+function clearAudioCacheAll() {
+  Object.values(audioCache).forEach(entry => {
+    Promise.resolve(entry).then(url => { try { URL.revokeObjectURL(url); } catch(e){} }).catch(()=>{});
+  });
+  audioCache = {};
+}
+
+// Background-fill the cache for every paragraph in the chapter so that
+// skipping/tapping anywhere in it never has to wait on a fresh TTS fetch.
+// Throttled with a small gap between requests so it doesn't starve a
+// foreground fetch triggered by the user actually tapping something.
+async function preloadChapterAudio(chIdx) {
+  const myToken = ++audioPreloadToken;
+  buildParagraphs();
+  for (const p of paragraphs) {
+    if (myToken !== audioPreloadToken || chIdx !== currentChapter) return;
+    try { await getCachedAudio(p.startIdx); } catch(e) {}
+    await new Promise(r => setTimeout(r, 60));
+  }
+}
+
 function clearHighlightTimers() {
   highlightTimers.forEach(clearTimeout);
   highlightTimers = [];
 }
 
-function scheduleHighlights(para, firstSentIdx, duration) {
+// elapsedMs (v3.3.17): how far the audio has ALREADY played when this schedule
+// is built — nonzero when auto-advance gapless-started the blob before
+// loadChapter/playFrom caught up. Each timer fires that much sooner (clamped
+// to 0, i.e. immediately for sentences the voice has already passed).
+function scheduleHighlights(para, firstSentIdx, duration, elapsedMs = 0) {
   clearHighlightTimers();
   const sentGroup = sentences.slice(para.startIdx, para.startIdx + para.count);
   const charCounts = sentGroup.map(s => Math.max(s.length, 1));
   const totalChars = charCounts.reduce((a,b) => a+b, 0) || 1;
-  let elapsed = 0;
+  let elapsed = -elapsedMs;
   sentGroup.forEach((_, j) => {
     const sIdx = para.startIdx + j;
     if (sIdx < firstSentIdx) { elapsed += (charCounts[j]/totalChars)*duration; return; }
@@ -2363,8 +2740,29 @@ function scheduleHighlights(para, firstSentIdx, duration) {
   });
 }
 
+// v3.3.16 — engine liveness tracking. resumePlaybackIfNeeded() must know
+// whether the playback loop is still running (just suspended by iOS) or has
+// actually returned (failed chapter transition), because the correct recovery
+// is opposite in each case. The wrapper marks the loop alive for its entire
+// run; the session check in `finally` keeps the auto-advance chained
+// playFrom(0) (started inside playFromRun, not awaited) from being wrongly
+// marked dead when the outer run unwinds.
+let playFromSeq = 0, playFromActive = 0;
 async function playFrom(startSentIdx) {
+  const seq = ++playFromSeq;
+  playFromActive = seq;
+  try { await playFromRun(startSentIdx); }
+  finally { if (playFromActive === seq) playFromActive = 0; }
+}
+
+async function playFromRun(startSentIdx) {
   isStopped = false;
+  // Defense in depth: never let a highlight timer scheduled by a previous
+  // playFrom() session survive into this one. Auto-advance calls playFrom(0)
+  // directly (no stopAudio() in between, unlike a manual sentence tap), so
+  // this session used to rely entirely on the old session's own teardown
+  // having already cleared everything — this guarantees it regardless (v3.3.15).
+  clearHighlightTimers();
   if (!sessionStart) startStatsSession();
   const mySession = ++playSession;
   sentenceIndex = startSentIdx;
@@ -2398,32 +2796,59 @@ async function playFrom(startSentIdx) {
     firstParaText = firstPara?.text || '';
   }
 
-  // Fetch first blob. If this is the first paragraph of a prewarmed next chapter, reuse it.
+  // Fetch first blob (cached — instant if already preloaded/visited).
+  // If this is the first paragraph of a prewarmed next chapter, reuse that instead.
   let currentBlobUrl = null;
   try {
-    if (startSentIdx === 0 && nextChapterFirstAudioCache && nextChapterFirstAudioCache.chapter === currentChapter) {
-      currentBlobUrl = await nextChapterFirstAudioCache.promise;
+    const pre = nextChapterFirstAudioCache;
+    if (startSentIdx === 0 && pre && pre.chapter === currentChapter
+        && paragraphs[0] && pre.text === paragraphs[0].text) {
+      currentBlobUrl = await pre.promise;
       nextChapterFirstAudioCache = null;
+      audioCache[audioCacheKey(startSentIdx)] = Promise.resolve(currentBlobUrl);
     } else {
-      currentBlobUrl = await fetchAudioBlob(firstParaText);
+      // v3.3.17: if a prewarm exists for this chapter but its text does NOT
+      // exactly match paragraph 0 (extraction difference), discard it and
+      // fetch the correct blob — the gapless early-start may already be
+      // playing the mismatched blob; assigning the fresh src below interrupts
+      // it (a brief repeat of the opening words, but highlights stay in sync).
+      if (pre && pre.chapter === currentChapter) nextChapterFirstAudioCache = null;
+      currentBlobUrl = await getCachedAudio(startSentIdx);
     }
-  } catch(e) { return; }
-
-  if (isStopped || mySession !== playSession) {
-    URL.revokeObjectURL(currentBlobUrl); return;
+  } catch(e) {
+    // This used to just `return` here — silently, with the "Reading..."
+    // status dot left on and no way to tell playback had actually stopped.
+    // This is a distinct cause of "chapter changes but audio never starts"
+    // from the loadChapter()/savePosition() bug fixed in v3.3.11: this one
+    // fires when the prewarmed (or freshly requested) audio for the new
+    // chapter's first paragraph fails to fetch — e.g. a transient TTS
+    // server hiccup during background prewarm. Fall back to one fresh
+    // attempt before giving up (v3.3.12).
+    nextChapterFirstAudioCache = null;
+    try {
+      currentBlobUrl = await getCachedAudio(startSentIdx);
+    } catch(e2) {
+      setStatus('paused');
+      showToast('⚠️ Could not load audio — tap play to retry');
+      return;
+    }
   }
 
-  // Pre-fetch next blob in parallel
+  if (isStopped || mySession !== playSession) {
+    return;
+  }
+
+  // Pre-fetch next blob in parallel (cached — persists across taps/skips)
   let nextBlobPromise = pIdx+1 < paragraphs.length
-    ? fetchAudioBlob(paragraphs[pIdx+1].text)
+    ? getCachedAudio(paragraphs[pIdx+1].startIdx)
     : null;
   let nextNextBlobPromise = pIdx+2 < paragraphs.length
-    ? fetchAudioBlob(paragraphs[pIdx+2].text)
+    ? getCachedAudio(paragraphs[pIdx+2].startIdx)
     : null;
 
   while (pIdx < paragraphs.length) {
     if (isStopped || mySession !== playSession) {
-      URL.revokeObjectURL(currentBlobUrl); return;
+      return;
     }
 
     const para = paragraphs[pIdx];
@@ -2435,12 +2860,18 @@ async function playFrom(startSentIdx) {
       ? { startIdx: startSentIdx, count: para.count - (startSentIdx - para.startIdx), text: firstParaText }
       : para;
 
-    // Set audio src and play
-    audio.src = currentBlobUrl;
+    // Set audio src and play.
+    // v3.3.16: chapter auto-advance may have ALREADY started this exact blob
+    // (gapless start fired at the previous chapter's end, before loadChapter)
+    // — in that case don't reset src or re-play, just adopt the playback in
+    // progress. Resetting src would restart the audio; re-playing is a no-op
+    // but the canplay wait below could stall.
+    const alreadyPlaying = audio.src === currentBlobUrl && !audio.paused && !audio.ended;
+    if (!alreadyPlaying) audio.src = currentBlobUrl;
     currentAudio = audio;
 
     // Wait for enough data then play — short timeout, blob is already downloaded
-    await new Promise(r => {
+    if (!alreadyPlaying) await new Promise(r => {
       if (audio.readyState >= 3) { r(); return; }
       audio.oncanplay = r;
       audio.onerror = r;
@@ -2448,24 +2879,47 @@ async function playFrom(startSentIdx) {
     });
 
     if (isStopped || mySession !== playSession) {
-      URL.revokeObjectURL(currentBlobUrl); return;
+      return;
     }
 
     // Schedule highlights using duration estimate (words/speed)
     const estDuration = (effectivePara.text.split(/\s+/).length / (speed * 2.5)) * 1000;
-    scheduleHighlights(effectivePara, firstSent, estDuration);
+    scheduleHighlights(effectivePara, firstSent, estDuration, alreadyPlaying ? audio.currentTime * 1000 : 0);
 
     // Actually play. If browser refuses autoplay, do not fake progress or skip silently.
-    const played = await safePlayAudio(audio, mySession);
+    const played = alreadyPlaying ? true : await safePlayAudio(audio, mySession);
     if (!played) {
       clearHighlightTimers();
       setStatus('paused');
       return;
     }
 
-    // Refine highlights once we know real duration
+    // Refine highlights once we know real duration. The pre-play estimate
+    // (words/speed) is a rough approximation — if the real duration isn't
+    // available yet at this exact moment (plausible right when a fresh
+    // audio.src is assigned, which is exactly what happens at a chapter
+    // boundary), this used to just keep running on the estimate for the
+    // whole paragraph with no correction, which is what made highlighting
+    // visibly lag behind the voice specifically when starting a new chapter
+    // (mid-chapter paragraphs reuse an audio element that's already "warmed
+    // up" and reports duration reliably). Now falls back to correcting the
+    // schedule the moment real duration does become available (v3.3.14).
     if (audio.duration && !isNaN(audio.duration)) {
-      scheduleHighlights(effectivePara, firstSent, audio.duration * 1000);
+      scheduleHighlights(effectivePara, firstSent, audio.duration * 1000, audio.currentTime * 1000);
+    } else {
+      // audio.src gets reassigned to the next paragraph's blob as soon as
+      // this one ends — capture both the session and the exact blob this
+      // listener is for, so a late-firing event can't reschedule highlights
+      // against whatever paragraph happens to be playing by then.
+      const mySessionForFix = mySession;
+      const blobUrlForFix = currentBlobUrl;
+      audio.addEventListener('loadedmetadata', function onMeta() {
+        audio.removeEventListener('loadedmetadata', onMeta);
+        if (isStopped || mySessionForFix !== playSession || audio.src !== blobUrlForFix) return;
+        if (audio.duration && !isNaN(audio.duration)) {
+          scheduleHighlights(effectivePara, firstSent, audio.duration * 1000, audio.currentTime * 1000);
+        }
+      }, { once: true });
     }
 
     sentenceIndex = firstSent;
@@ -2492,7 +2946,6 @@ async function playFrom(startSentIdx) {
     }
 
     clearHighlightTimers();
-    URL.revokeObjectURL(currentBlobUrl);
     currentBlobUrl = null;
 
     if (isStopped || mySession !== playSession) return;
@@ -2517,18 +2970,18 @@ async function playFrom(startSentIdx) {
 
     if (sleepEndChapter) { stopReading(); sleepEndChapter = false; return; }
 
-    // Get next blob (should already be fetched)
+    // Get next blob (should already be fetched/cached)
     if (pIdx < paragraphs.length) {
       try {
         currentBlobUrl = await nextBlobPromise;
         // Shift the preload queue
         nextBlobPromise = nextNextBlobPromise;
         nextNextBlobPromise = pIdx+2 < paragraphs.length
-          ? fetchAudioBlob(paragraphs[pIdx+2].text)
+          ? getCachedAudio(paragraphs[pIdx+2].startIdx)
           : null;
       } catch(e) {
-        // Retry once before skipping
-        try { currentBlobUrl = await fetchAudioBlob(paragraphs[pIdx]?.text || ''); }
+        // Retry once before skipping (getCachedAudio drops failed entries, so this re-fetches)
+        try { currentBlobUrl = paragraphs[pIdx] ? await getCachedAudio(paragraphs[pIdx].startIdx) : null; }
         catch(e2) { pIdx++; continue; }
       }
     }
@@ -2537,9 +2990,39 @@ async function playFrom(startSentIdx) {
   if (!isStopped && mySession === playSession) {
     if (sleepEndChapter) { stopReading(); sleepEndChapter = false; return; }
     if (currentChapter < chapters.length - 1) {
+      // v3.3.16: keep the iOS background audio session alive across the
+      // chapter boundary. iOS only lets a suspended page start new audio if
+      // playback resumes almost immediately after 'ended' — doing
+      // loadChapter()'s DOM work and awaits first left a silent gap, iOS tore
+      // the session down, and the play() inside the next playFrom() was then
+      // rejected while locked. This is the actual root cause of auto-advance
+      // dying at chapter boundaries in background. So: if the prewarmed
+      // first-paragraph audio is ready, start it RIGHT NOW, then let
+      // loadChapter/playFrom catch up while it's already speaking (playFrom
+      // detects the blob already playing and adopts it — see alreadyPlaying).
+      try {
+        const pre = nextChapterFirstAudioCache;
+        if (pre && pre.chapter === currentChapter + 1) {
+          const earlyUrl = await Promise.race([pre.promise, sleepMs(50).then(() => null)]);
+          if (earlyUrl && !isStopped && mySession === playSession) {
+            audio.src = earlyUrl;
+            audio.play().catch(() => {});
+          }
+        }
+      } catch(e) {}
       document.getElementById('chi-'+currentChapter)?.classList.add('done');
       document.getElementById('dch-'+currentChapter)?.classList.add('done');
-      await loadChapter(currentChapter + 1);
+      // If loadChapter() throws for any reason, this used to die silently —
+      // the chapter's UI could still end up updated (currentChapter/DOM are
+      // set early in loadChapter, before anything risky runs) but playFrom(0)
+      // on the next line would never be reached, so playback just stopped
+      // with no error shown. Guard it so auto-advance can't be killed by one
+      // bad chapter load (v3.3.11).
+      try {
+        await loadChapter(currentChapter + 1);
+      } catch(e) {
+        showToast('⚠️ Could not load next chapter — tap play to retry');
+      }
       if (!isStopped && mySession === playSession) playFrom(0);
     } else {
       stopReading(); clearSavedPos();
@@ -2632,11 +3115,20 @@ function togglePlay(){ resetHideTimer();
 function prevCh(){const w=isPlaying;stopAudio();if(currentChapter>0){loadChapter(currentChapter-1).then(()=>{if(w){isPlaying=true;document.getElementById('play-btn').textContent='⏸';playFrom(0);}});}  }
 function nextCh(){const w=isPlaying;stopAudio();if(currentChapter<chapters.length-1){loadChapter(currentChapter+1).then(()=>{if(w){isPlaying=true;document.getElementById('play-btn').textContent='⏸';playFrom(0);}});}  }
 
+// Tracks the last time speed/fontSize changed on THIS device. Drive restore
+// (gdriveRestoreOnLoad) uses this to avoid clobbering a setting the user just
+// changed locally with a stale value from an older Drive save (settings are
+// only pushed to Drive periodically, e.g. every 10 sentences — see v3.3.4).
+function markLocalSettingsChanged(){
+  localStorage.setItem('bv_settings_ts', Date.now());
+}
+
 function onSpeed(val){
   speed=Math.min(3.0,Math.max(0.5,parseFloat(val)||1.7));
   const sv=document.getElementById('speed-val'); if(sv) sv.value=speed.toFixed(2);
   const si=document.getElementById('speed-input'); if(si) si.value=speed.toFixed(2);
   localStorage.setItem('tts_speed',speed);
+  markLocalSettingsChanged();
   if(isPlaying){const i=sentenceIndex;stopAudio();setTimeout(()=>{isStopped=false;isPlaying=true;playFrom(i);},50);}
 }
 function applySpeeds(s){
@@ -2651,6 +3143,7 @@ function changeFontSize(delta){
   fontSize=Math.max(12,Math.min(28,fontSize+delta));
   applyFontSize(fontSize);
   localStorage.setItem('tts_fs',fontSize);
+  markLocalSettingsChanged();
 }
 function applyFontSize(sz){
   document.documentElement.style.setProperty('--fs',sz+'px');
@@ -2833,20 +3326,29 @@ function clearAllData() {
 
 function setFontSizeInput(val) {
   const n = parseInt(val);
-  if (n >= 10 && n <= 32) { fontSize = n; applyFontSize(fontSize); localStorage.setItem('tts_fs', fontSize); }
+  if (n >= 10 && n <= 32) { fontSize = n; applyFontSize(fontSize); localStorage.setItem('tts_fs', fontSize); markLocalSettingsChanged(); }
 }
 
 function changeSpeedStep(dir) {
   speed = Math.round(Math.min(3.0, Math.max(0.5, speed + dir * 0.05)) * 100) / 100;
   applySpeeds(speed);
   localStorage.setItem('tts_speed', speed);
+  markLocalSettingsChanged();
   const si = document.getElementById('speed-input'); if (si) si.value = speed.toFixed(2);
   if (isPlaying) { const i=sentenceIndex; stopAudio(); setTimeout(()=>{ isStopped=false; isPlaying=true; playFrom(i); },50); }
 }
 
 function setSpeedInput(val) {
   const n = Math.round(Math.min(3.0, Math.max(0.5, parseFloat(val))) * 100) / 100;
-  if (!isNaN(n)) { speed = n; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
+  if (!isNaN(n)) {
+    speed = n; applySpeeds(speed); localStorage.setItem('tts_speed', speed);
+    markLocalSettingsChanged();
+    // Was missing vs changeSpeedStep() (the +/- buttons) — typing a speed and
+    // confirming it updated the `speed` variable for the *next* sentence, but
+    // didn't restart the currently-playing audio, so it looked like the typed
+    // value "didn't take" compared to the buttons (v3.3.4).
+    if (isPlaying) { const i=sentenceIndex; stopAudio(); setTimeout(()=>{ isStopped=false; isPlaying=true; playFrom(i); },50); }
+  }
 }
 
 function toggleMoreExtra() {
@@ -2885,11 +3387,12 @@ function changeDefaultSpeed(dir) {
   speed = Math.round(Math.min(3.0, Math.max(0.5, speed + dir * 0.05)) * 100) / 100;
   applySpeeds(speed);
   localStorage.setItem('tts_speed', speed);
+  markLocalSettingsChanged();
   const li = document.getElementById('lib-speed-input'); if (li) li.value = speed.toFixed(2);
 }
 function setDefaultSpeed(val) {
   const n = Math.round(Math.min(3.0, Math.max(0.5, parseFloat(val))) * 100) / 100;
-  if (!isNaN(n)) { speed = n; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
+  if (!isNaN(n)) { speed = n; applySpeeds(speed); localStorage.setItem('tts_speed', speed); markLocalSettingsChanged(); }
 }
 // Sync lib speed input when library options sheet opens
 const _libOptOpen = window.openSheet;
@@ -3080,6 +3583,44 @@ function openBookSearch() {
   setTimeout(() => document.getElementById('book-search-input')?.focus(), 300);
 }
 
+// v3.3.19: searchInBook used to split each chapter's raw text with its own
+// standalone regex, independent of wrapSentences()'s real (and, as of
+// v3.3.18, nested-block/chat-scene-aware) splitting logic. The two didn't
+// produce the same sentence boundaries, so a result's sentenceIdx pointed at
+// the wrong entry in the real sentences[]/sentenceEls[] once the chapter
+// loaded - clicking a result could land on a completely unrelated sentence
+// (confirmed: correct chapter, wrong sentence highlighted). Fix: reuse
+// wrapSentences() itself against a detached, off-screen copy of the chapter
+// so indices are always identical to the real ones - not a reimplementation
+// that could drift out of sync again. Off-screen (not display:none /
+// visibility:hidden) because innerText needs layout to compute, same iOS
+// quirk worked around for prewarm text extraction in v3.3.13. The live
+// sentences/sentenceEls globals are saved and restored around the call so
+// this never disturbs whatever chapter is actually on screen.
+let chapterSentenceCache = {};
+let chapterSentenceCacheBook = null;
+function getChapterSentencesForSearch(chIdx) {
+  if (chapterSentenceCacheBook !== bookTitle) {
+    chapterSentenceCache = {};
+    chapterSentenceCacheBook = bookTitle;
+  }
+  if (chapterSentenceCache[chIdx]) return chapterSentenceCache[chIdx];
+
+  const savedSentences = sentences, savedSentenceEls = sentenceEls;
+  const tmp = document.createElement('div');
+  tmp.style.cssText = 'position:absolute;left:-9999px;top:0;width:600px';
+  tmp.innerHTML = chapters[chIdx].html;
+  document.body.appendChild(tmp);
+  wrapSentences(tmp);
+  const result = sentences.slice();
+  document.body.removeChild(tmp);
+  sentences = savedSentences;
+  sentenceEls = savedSentenceEls;
+
+  chapterSentenceCache[chIdx] = result;
+  return result;
+}
+
 function searchInBook(query) {
   const el = document.getElementById('search-results');
   const countEl = document.getElementById('search-count');
@@ -3094,13 +3635,12 @@ function searchInBook(query) {
   searchResults = [];
   const q = lastSearchQuery.toLowerCase();
 
-  // Search all chapters
+  // Search all chapters. Cheap plain-text pre-check first - the expensive
+  // DOM-based split only runs for chapters that actually contain a match
+  // (typically a small handful, not the whole book on every keystroke).
   chapters.forEach((ch, chIdx) => {
-    const text = ch.text;
-    const textLower = text.toLowerCase();
-    // Split into sentences for context
-    const sents = text.match(/[^.!?…]+[.!?…]*["'\u2019\u201d]?\s*/g) || [text];
-    let charPos = 0;
+    if (!ch.text.toLowerCase().includes(q)) return;
+    const sents = getChapterSentencesForSearch(chIdx);
     sents.forEach((sent, sIdx) => {
       const sentLower = sent.toLowerCase();
       let pos = sentLower.indexOf(q);
@@ -3115,7 +3655,6 @@ function searchInBook(query) {
         });
         pos = sentLower.indexOf(q, pos + 1);
       }
-      charPos += sent.length;
     });
   });
 
@@ -3255,11 +3794,20 @@ async function tapReconnectDrive() {
   const bar = document.getElementById('drive-reconnect-bar');
   if (bar) bar.querySelector('button').textContent = 'Connecting...';
   await signInGDrive();
+  if (!isTokenValid()) {
+    // Google's OAuth popup sometimes only completes account selection on the
+    // first attempt without finishing the token grant (known Identity
+    // Services quirk) — retry once automatically instead of making the user
+    // tap Reconnect a second time themselves.
+    await signInGDrive();
+  }
   if (isTokenValid()) {
     if (bar) bar.style.display = 'none';
     // Push any pending progress
     if (bookTitle) gdriveSavePosition();
     showToast('☁️ Drive reconnected');
+  } else if (bar) {
+    bar.querySelector('button').textContent = 'Reconnect';
   }
 }
 
@@ -3666,6 +4214,63 @@ async function tryLoadFromDrive(book) {
 // library declared above
 let epubCache = {}; // bookTitle -> {chapters, text}
 
+// ── PERSISTENT EPUB CACHE (IndexedDB) ──
+// epubCache above is in-memory only, wiped on every refresh — which meant
+// resuming straight into the reader after a refresh (v3.3.5) still had to
+// re-download the whole epub from Drive and re-parse it from scratch every
+// single time, which is slow and feels like "reconnecting" rather than a
+// normal instant refresh. This persists parsed chapters locally so reopening
+// a book (including the refresh auto-resume) is instant with no network
+// round trip; Drive is only used as a fallback (new device, cache cleared).
+let _idbPromise = null;
+function idbOpen() {
+  if (_idbPromise) return _idbPromise;
+  _idbPromise = new Promise((resolve, reject) => {
+    if (!window.indexedDB) { reject(new Error('no indexedDB')); return; }
+    const req = indexedDB.open('bookvoice-db', 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('epubs')) db.createObjectStore('epubs', { keyPath: 'title' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return _idbPromise;
+}
+async function idbSaveBook(title, chapters) {
+  try {
+    const db = await idbOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('epubs', 'readwrite');
+      tx.objectStore('epubs').put({ title, chapters, ts: Date.now() });
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch(e) {}
+}
+async function idbLoadBook(title) {
+  try {
+    const db = await idbOpen();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction('epubs', 'readonly');
+      const req = tx.objectStore('epubs').get(title);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch(e) { return null; }
+}
+async function idbDeleteBook(title) {
+  try {
+    const db = await idbOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('epubs', 'readwrite');
+      tx.objectStore('epubs').delete(title);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch(e) {}
+}
+
 
 function deduplicateLibrary() {
   const seen = new Set();
@@ -3678,7 +4283,23 @@ function deduplicateLibrary() {
 }
 
 function saveLibrary() {
-  localStorage.setItem('bv_library', JSON.stringify(library));
+  try {
+    localStorage.setItem('bv_library', JSON.stringify(library));
+  } catch(e) {
+    // Most likely a storage-quota error — book covers (base64 data URLs) are
+    // by far the biggest thing in here, and a device closer to its quota
+    // (e.g. a less-frequently-cleared iPad) can fail here silently while
+    // reading still "works" for the current session, because bookTitle/
+    // chapters stay in memory even though the library list never actually
+    // got persisted. Retry once without covers before giving up (v3.3.7).
+    try {
+      const stripped = library.map(({cover, ...rest}) => rest);
+      localStorage.setItem('bv_library', JSON.stringify(stripped));
+      showToast('⚠️ Storage nearly full — book covers were dropped to keep your library saved');
+    } catch(e2) {
+      showToast('⚠️ Could not save library — device storage appears to be full');
+    }
+  }
 }
 
 function showLibrary() {
@@ -3687,6 +4308,7 @@ function showLibrary() {
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
   document.getElementById('library-screen').style.display = 'flex';
+  markLibraryScreen();
   renderLibrary();
 }
 
@@ -3698,6 +4320,65 @@ function showSetup() {
   showResumeBanner();
 }
 
+// Library sort — books previously only ever appeared in raw array order
+// (newest unshift'd to front, but re-importing an already-known title just
+// updates it in place instead of moving it, so it stayed wherever it
+// originally was). Persisted in localStorage so the choice sticks.
+function getLibSortMode() {
+  return localStorage.getItem('bv_lib_sort') || 'added-desc';
+}
+function setLibSort(mode) {
+  localStorage.setItem('bv_lib_sort', mode);
+  renderLibrary();
+}
+// Books added before v3.3.8 have no addedAt at all, which made Recently/
+// Oldest Added a no-op for them (every book compared equal, so the sort left
+// them in whatever order they already happened to be in — confirmed by
+// testing, not just a theoretical gap). There's no real historical date to
+// recover, so approximate one: current array position, since new imports
+// are unshift'd to the front, meaning index 0 is usually the most recent.
+// This runs once (each book only needs backfilling the first time) and
+// gives Recently/Oldest Added an actual, reversible order instead of doing
+// nothing (v3.3.9).
+function backfillLibraryAddedAt() {
+  if (!library.some(b => !b.addedAt)) return;
+  const base = Date.now();
+  library.forEach((book, idx) => {
+    if (!book.addedAt) book.addedAt = base - idx * 1000;
+  });
+  saveLibrary();
+}
+// "Recently Read" needs a separate lastOpenedAt (v3.3.10) — when a book was
+// last actually opened into the reader, not when it was added, so a book you
+// added ages ago but read again just now can still surface at the top. Books
+// opened since v3.3.10 get this stamped in openBookFromLibrary/loadEpub/
+// loadEpubFromLibrary; for older books with no record at all, fall back to
+// bv_pos (the single most-recently-active book, if this is it) or otherwise
+// addedAt — better than treating "never recorded" as "never read".
+function backfillLibraryLastOpenedAt() {
+  if (!library.some(b => !b.lastOpenedAt)) return;
+  const pos = loadSavedPos();
+  library.forEach(book => {
+    if (!book.lastOpenedAt) {
+      book.lastOpenedAt = (pos && pos.book === book.title && pos.ts) ? pos.ts : (book.addedAt || 0);
+    }
+  });
+  saveLibrary();
+}
+function sortLibraryWithIndex(mode) {
+  backfillLibraryAddedAt();
+  backfillLibraryLastOpenedAt();
+  const withIdx = library.map((book, idx) => ({ book, idx }));
+  withIdx.sort((a, b) => {
+    if (mode === 'name-asc') return a.book.title.localeCompare(b.book.title, undefined, { numeric: true, sensitivity: 'base' });
+    if (mode === 'name-desc') return b.book.title.localeCompare(a.book.title, undefined, { numeric: true, sensitivity: 'base' });
+    if (mode === 'added-asc') return (a.book.addedAt || 0) - (b.book.addedAt || 0);
+    if (mode === 'read-desc') return (b.book.lastOpenedAt || 0) - (a.book.lastOpenedAt || 0);
+    return (b.book.addedAt || 0) - (a.book.addedAt || 0); // added-desc (default)
+  });
+  return withIdx;
+}
+
 function renderLibrary() {
   const scroll = document.getElementById('lib-scroll');
   const empty = document.getElementById('lib-empty');
@@ -3705,7 +4386,10 @@ function renderLibrary() {
   empty.style.display = 'none';
   // Clear existing cards
   [...scroll.querySelectorAll('.book-card')].forEach(el => el.remove());
-  library.forEach((book, idx) => {
+  const sortMode = getLibSortMode();
+  const sortSel = document.getElementById('lib-sort-sel');
+  if (sortSel) sortSel.value = sortMode;
+  sortLibraryWithIndex(sortMode).forEach(({book, idx}) => {
     const card = document.createElement('div');
     card.className = 'book-card';
     const pct = book.totalChapters > 1 ? Math.round((book.chapter / (book.totalChapters-1))*100) : 0;
@@ -3739,6 +4423,7 @@ function deleteBook(e, idx) {
     }).catch(()=>{});
   }
   delete epubCache[book.title];
+  idbDeleteBook(book.title);
   library.splice(idx, 1);
   saveLibrary();
   renderLibrary();
@@ -3754,6 +4439,12 @@ async function openBookFromLibrary(idx) {
     document.getElementById('drop-zone').classList.add('hidden');
     document.getElementById('reader-scroll').classList.remove('hidden');
     document.getElementById('player').classList.remove('hidden');
+    markReaderScreen();
+    // Track when this book was last actually opened, separate from when it
+    // was added — lets "Recently Read" surface a book you opened just now
+    // even if it's been sitting in the library for ages (v3.3.10).
+    book.lastOpenedAt = Date.now();
+    saveLibrary();
     document.getElementById('library-screen').style.display = 'none';
     document.getElementById('setup-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
@@ -3789,6 +4480,21 @@ async function openBookFromLibrary(idx) {
   }
   // Clear stale cache so we re-parse fresh
   if (cached) delete epubCache[book.title];
+
+  // 1.5 Try persistent local cache (IndexedDB) — this is what makes
+  // reopening a book (including the refresh-into-reader resume) instant
+  // instead of re-downloading + re-parsing the whole epub from Drive every
+  // single time. Only Drive/epubZip-dependent features (translated-EPUB
+  // export) need the original zip, and those already handle a missing zip
+  // gracefully with a "re-open the book file" prompt.
+  const idbBook = await idbLoadBook(book.title);
+  if (idbBook && idbBook.chapters && idbBook.chapters.some(c => c.title && c.title.toLowerCase() !== 'unknown')) {
+    chapters = idbBook.chapters;
+    bookTitle = book.title;
+    epubCache[bookTitle] = { chapters };
+    showReader();
+    return;
+  }
 
   // 2. Try Drive
   if (gdriveEnabled && isTokenValid()) {
@@ -3867,6 +4573,7 @@ async function openBookFromLibrary(idx) {
             chapters = loadedChapters;
             bookTitle = book.title;
             epubCache[bookTitle] = { chapters, epubZip: zip };
+            idbSaveBook(bookTitle, chapters); // persist so next open skips Drive entirely
             // Update library entry driveFileId
             const libIdx = library.findIndex(b => b.title === bookTitle);
             if (libIdx >= 0 && !library[libIdx].driveFileId) {
@@ -3988,6 +4695,7 @@ async function loadEpubFromLibrary(file, titleOverride) {
     const title = titleOverride || cleanBookTitle(file.name.replace('.epub',''));
     // Cache in memory
     epubCache[title] = { chapters: loadedChapters, epubZip: zip };
+    idbSaveBook(title, loadedChapters); // persist for instant reopen later
     // Upload to Drive in background if not already there
     if (gdriveEnabled && isTokenValid()) driveUploadEpub(file, title);
 
@@ -3999,8 +4707,11 @@ async function loadEpubFromLibrary(file, titleOverride) {
     if (existing >= 0) {
       library[existing].totalChapters = loadedChapters.length;
     } else {
-      library.unshift({ title, totalChapters: loadedChapters.length, chapter, sentence });
+      library.unshift({ title, totalChapters: loadedChapters.length, chapter, sentence, addedAt: Date.now() });
     }
+    // Importing opens straight into the reader, so this counts as "opened" too
+    const openedNow2 = library.find(b => b.title === title);
+    if (openedNow2) openedNow2.lastOpenedAt = Date.now();
     saveLibrary();
 
     // Open it
@@ -4010,6 +4721,7 @@ async function loadEpubFromLibrary(file, titleOverride) {
     document.getElementById('drop-zone').classList.add('hidden');
     document.getElementById('reader-scroll').classList.remove('hidden');
     document.getElementById('player').classList.remove('hidden');
+    markReaderScreen();
     buildSidebar(); buildDownloadList(); setupMediaSession();
     loadChapter(chapter);
     sentenceIndex = sentence;
@@ -4090,6 +4802,10 @@ function updateServerStatus(state) {
 // Uses Google Identity Services + Drive REST API
 // Stores bookvoice-saves.json in Drive app data folder (hidden, only this app can see it)
 const GDRIVE_CLIENT_ID = '80533303528-2h05p622crn1opjp53pe252ln3uqh3rl.apps.googleusercontent.com'; // placeholder — see setup note
+// drive.appdata: hidden per-app storage for saves/library sync — tied to whichever
+// account is connected via the Library ⚙ "Connect Google Drive" button (kept
+// separate from the Drive *browser* account below, on purpose: one account can
+// hold the reading-progress sync while a different account is browsed for epubs)
 const GDRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.appdata';
 let gdriveToken = localStorage.getItem('gdrive_token') || null;
 let gdriveExpiry = parseInt(localStorage.getItem('gdrive_expiry') || '0');
@@ -4103,6 +4819,324 @@ let gdriveEnabled = !!gdriveToken;
 // 4. Credentials → OAuth 2.0 Client ID → Web app
 // 5. Add https://evekanwa2023-stack.github.io as authorized origin
 // 6. Copy the Client ID and replace GDRIVE_CLIENT_ID above
+
+// ── GOOGLE DRIVE FILE BROWSER (browse/search Drive, import an epub from anywhere in it) ──
+// Same approach as the audiobook project: custom folder browser over the Drive
+// REST API (no Google Picker API / extra API key needed).
+//
+// Deliberately a SEPARATE Google sign-in from the sync account above — this
+// account only ever gets read-only scope, and connecting it never touches or
+// replaces the sync account's token. Lets you e.g. keep reading-progress sync
+// on evekanwa2023 while browsing/importing epubs from a different Drive
+// (memaeve43) without one connection overwriting the other.
+const GDRIVE_BROWSE_SCOPES = 'https://www.googleapis.com/auth/drive.readonly email';
+let gdriveBrowseToken = localStorage.getItem('gdrive_browse_token') || null;
+let gdriveBrowseExpiry = parseInt(localStorage.getItem('gdrive_browse_expiry') || '0');
+let gdriveBrowseEmail = localStorage.getItem('gdrive_browse_email') || null;
+let gdriveBrowseEnabled = !!gdriveBrowseToken;
+
+function isBrowseTokenValid() {
+  return gdriveBrowseToken && Date.now() < gdriveBrowseExpiry - 60000;
+}
+
+function signInGDriveBrowse() {
+  return new Promise((resolve) => {
+    if (!window.google) {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = () => doSignInBrowse(resolve);
+      document.head.appendChild(s);
+    } else {
+      doSignInBrowse(resolve);
+    }
+  });
+}
+
+function doSignInBrowse(resolve) {
+  try {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: GDRIVE_CLIENT_ID,
+      scope: GDRIVE_BROWSE_SCOPES,
+      // Always show the account chooser — this connection is meant to be
+      // pickable independently of whichever account is already signed in
+      // for sync, so someone can browse a different Drive on purpose.
+      prompt: 'select_account',
+      callback: async (resp) => {
+        if (resp.error) { showToast('Sign-in failed: ' + resp.error); resolve(false); return; }
+        gdriveBrowseToken = resp.access_token;
+        gdriveBrowseExpiry = Date.now() + (resp.expires_in * 1000);
+        gdriveBrowseEnabled = true;
+        localStorage.setItem('gdrive_browse_token', gdriveBrowseToken);
+        localStorage.setItem('gdrive_browse_expiry', gdriveBrowseExpiry);
+        try {
+          const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: 'Bearer ' + gdriveBrowseToken }
+          });
+          if (r.ok) {
+            const info = await r.json();
+            gdriveBrowseEmail = info.email || null;
+            localStorage.setItem('gdrive_browse_email', gdriveBrowseEmail || '');
+          }
+        } catch(e) {}
+        resolve(true);
+      }
+    });
+    client.requestAccessToken();
+  } catch(e) {
+    showToast('Google Sign-in not configured yet');
+    resolve(false);
+  }
+}
+
+function disconnectDriveBrowse() {
+  gdriveBrowseToken = null; gdriveBrowseExpiry = 0; gdriveBrowseEnabled = false; gdriveBrowseEmail = null;
+  localStorage.removeItem('gdrive_browse_token');
+  localStorage.removeItem('gdrive_browse_expiry');
+  localStorage.removeItem('gdrive_browse_email');
+}
+
+async function switchDriveBrowseAccount() {
+  disconnectDriveBrowse();
+  const ok = await signInGDriveBrowse();
+  if (ok) await renderDriveFolderList('root', 'My Drive');
+  updateDriveBrowserAccountLabel();
+}
+
+function updateDriveBrowserAccountLabel() {
+  const el = document.getElementById('drive-browser-account');
+  if (!el) return;
+  el.textContent = gdriveBrowseEmail ? `Browsing: ${gdriveBrowseEmail}` : '';
+}
+
+let driveFolderStack = [];
+let driveAllFolders = [];
+let driveAllEpubs = [];
+let driveIsGlobalSearch = false;
+
+async function driveApiList(q, fields='files(id,name)', orderBy='name', pageToken=null) {
+  const p = new URLSearchParams({ q, fields:`nextPageToken,${fields}`, orderBy, pageSize:'1000', ...(pageToken?{pageToken}:{}) });
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?${p}`, { headers: { Authorization:`Bearer ${gdriveBrowseToken}` } });
+  if (!r.ok) throw new Error('Drive API ' + r.status);
+  return r.json();
+}
+// Drive's own orderBy=name is a plain string sort ("1, 10, 11, 2, 20, 3..."),
+// not what anyone wants for numbered folders like "1 Freebirds", "10 Simple
+// Man". Sort client-side with numeric:true so numbers compare naturally.
+function naturalNameSort(a, b) {
+  return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+async function listDriveFolders(pid='root') {
+  const d = await driveApiList(`'${pid}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`, 'files(id,name,modifiedTime)');
+  return (d.files || []).sort(naturalNameSort);
+}
+async function listDriveEpubs(fid) {
+  let all=[], token=null;
+  do {
+    const d = await driveApiList(
+      `'${fid}' in parents and (mimeType='application/epub+zip' or name contains '.epub') and trashed=false`,
+      'files(id,name,size)', 'name', token
+    );
+    all = all.concat(d.files || []);
+    token = d.nextPageToken;
+  } while (token);
+  return all.sort(naturalNameSort);
+}
+
+// ── Drive browser favorites (folders) ──
+function getDriveFavs() { try { return JSON.parse(localStorage.getItem('bv_drive_fav') || '[]'); } catch(e) { return []; } }
+function saveDriveFavs(f) { localStorage.setItem('bv_drive_fav', JSON.stringify(f)); }
+function isDriveFav(id) { return getDriveFavs().some(f => f.id === id); }
+function toggleDriveFav(id, name, e) {
+  e.stopPropagation();
+  let favs = getDriveFavs();
+  if (isDriveFav(id)) favs = favs.filter(f => f.id !== id);
+  else favs.unshift({ id, name });
+  saveDriveFavs(favs);
+  renderDriveFolderItems(driveAllFolders, driveAllEpubs);
+}
+
+async function openDriveBrowser() {
+  if (!gdriveBrowseEnabled || !isBrowseTokenValid()) {
+    const ok = await signInGDriveBrowse();
+    if (!ok || !isBrowseTokenValid()) { showToast('Connect a Google account to browse Drive'); return; }
+  }
+  updateDriveBrowserAccountLabel();
+  driveFolderStack = [{ id:'root', name:'My Drive' }];
+  driveIsGlobalSearch = false;
+  openSheet('drive-browser-sheet');
+  await renderDriveFolderList('root', 'My Drive');
+}
+function closeDriveBrowser() { closeSheet('drive-browser-sheet'); }
+
+async function renderDriveFolderList(pid, pname) {
+  driveIsGlobalSearch = false;
+  document.getElementById('drive-browser-title').textContent = '📁 ' + pname;
+  document.getElementById('drive-folder-search').value = '';
+  const list = document.getElementById('drive-folder-list');
+  list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted)">Loading…</div>';
+  try {
+    const [folders, epubs] = await Promise.all([
+      listDriveFolders(pid),
+      pid !== 'root' ? listDriveEpubs(pid) : Promise.resolve([])
+    ]);
+    driveAllFolders = folders;
+    driveAllEpubs = epubs;
+    renderDriveFolderItems(folders, epubs);
+  } catch(e) {
+    list.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted)">Error: ${e.message}</div>`;
+  }
+}
+
+function renderDriveFolderItems(folders, epubs) {
+  const list = document.getElementById('drive-folder-list');
+  list.innerHTML = '';
+
+  if (driveIsGlobalSearch) {
+    const hdr = document.createElement('div');
+    hdr.className = 'drive-section-hdr';
+    hdr.textContent = '🔍 Search results (whole Drive)';
+    list.appendChild(hdr);
+    if (!folders.length && !epubs.length) {
+      list.innerHTML += '<div style="padding:24px;text-align:center;color:var(--muted)">No matches</div>';
+      return;
+    }
+    epubs.forEach(f => list.appendChild(mkDriveEpubItem(f)));
+    folders.forEach(f => {
+      const item = mkDriveFolderItem(f);
+      item.onclick = () => { driveIsGlobalSearch = false; driveFolderStack.push({id:f.id,name:f.name}); renderDriveFolderList(f.id,f.name); };
+      list.appendChild(item);
+    });
+    return;
+  }
+
+  const pid = driveFolderStack[driveFolderStack.length-1].id;
+
+  if (driveFolderStack.length > 1) {
+    const back = document.createElement('div');
+    back.className = 'drive-folder-item';
+    back.innerHTML = `<span style="font-size:18px">⬅</span><span style="flex:1;font-size:13px;color:var(--muted)">Back</span>`;
+    back.onclick = () => { driveFolderStack.pop(); const p=driveFolderStack[driveFolderStack.length-1]; renderDriveFolderList(p.id,p.name); };
+    list.appendChild(back);
+  }
+
+  if (pid === 'root') {
+    const favs = getDriveFavs();
+    if (favs.length > 0) {
+      const hdr = document.createElement('div');
+      hdr.className = 'drive-section-hdr';
+      hdr.textContent = '⭐ Favorites';
+      list.appendChild(hdr);
+      favs.forEach(f => {
+        const item = mkDriveFolderItem(f);
+        item.onclick = () => { driveFolderStack.push({id:f.id,name:f.name}); renderDriveFolderList(f.id,f.name); };
+        list.appendChild(item);
+      });
+      const divider = document.createElement('div');
+      divider.style.cssText = 'margin:4px 12px;border-top:1px solid var(--border)';
+      list.appendChild(divider);
+    }
+  }
+
+  if (!folders.length && !epubs.length) {
+    list.innerHTML += '<div style="padding:24px;text-align:center;color:var(--muted)">No folders or epub files here</div>';
+    return;
+  }
+
+  if (epubs.length > 0) {
+    const hdr = document.createElement('div');
+    hdr.className = 'drive-section-hdr';
+    hdr.textContent = '📖 EPUB files';
+    list.appendChild(hdr);
+    epubs.forEach(f => list.appendChild(mkDriveEpubItem(f)));
+  }
+  if (folders.length > 0) {
+    const hdr = document.createElement('div');
+    hdr.className = 'drive-section-hdr';
+    hdr.textContent = pid === 'root' ? '📁 Folders' : '📁 Subfolders';
+    list.appendChild(hdr);
+    folders.forEach(f => {
+      const item = mkDriveFolderItem(f);
+      item.onclick = () => { driveFolderStack.push({id:f.id,name:f.name}); renderDriveFolderList(f.id,f.name); };
+      list.appendChild(item);
+    });
+  }
+}
+
+function mkDriveFolderItem(f) {
+  const d = document.createElement('div');
+  d.className = 'drive-folder-item';
+  const starred = isDriveFav(f.id);
+  d.innerHTML = `<span style="font-size:18px">📁</span>
+    <span style="flex:1;font-size:13px">${escHtml(f.name)}${f.modifiedTime?`<br><span style="font-size:10px;color:var(--muted)">${new Date(f.modifiedTime).toLocaleDateString()}</span>`:''}</span>
+    <button onclick="toggleDriveFav('${f.id}','${f.name.replace(/'/g,"\\'")}',event)" style="background:none;border:none;cursor:pointer;font-size:16px;padding:2px 6px;opacity:${starred?1:0.3}">${starred?'⭐':'☆'}</button>
+    <span style="color:var(--muted)">›</span>`;
+  return d;
+}
+function mkDriveEpubItem(f) {
+  const d = document.createElement('div');
+  d.className = 'drive-folder-item';
+  d.innerHTML = `<span style="font-size:18px">📖</span><span style="flex:1;font-size:13px">${escHtml(f.name)}</span>`;
+  d.onclick = () => selectDriveEpub(f);
+  return d;
+}
+
+let _driveSearchTimer = null;
+function filterDriveFolders() {
+  const q = document.getElementById('drive-folder-search').value.trim();
+  const ql = q.toLowerCase();
+  clearTimeout(_driveSearchTimer);
+  if (!q) {
+    driveIsGlobalSearch = false;
+    renderDriveFolderItems(driveAllFolders, driveAllEpubs);
+    return;
+  }
+  driveIsGlobalSearch = false;
+  renderDriveFolderItems(
+    driveAllFolders.filter(f => f.name.toLowerCase().includes(ql)),
+    driveAllEpubs.filter(f => f.name.toLowerCase().includes(ql))
+  );
+  _driveSearchTimer = setTimeout(async () => {
+    try {
+      const safe = q.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const [fd, ed] = await Promise.all([
+        driveApiList(`mimeType='application/vnd.google-apps.folder' and name contains '${safe}' and trashed=false`, 'files(id,name,modifiedTime)'),
+        driveApiList(`(mimeType='application/epub+zip' or name contains '.epub') and name contains '${safe}' and trashed=false`, 'files(id,name,size)')
+      ]);
+      driveIsGlobalSearch = true;
+      renderDriveFolderItems((fd.files || []).sort(naturalNameSort), (ed.files || []).sort(naturalNameSort));
+    } catch(e) { /* local filter above already shown as fallback */ }
+  }, 500);
+}
+function applyDriveFolderSort() {
+  const v = document.getElementById('drive-folder-sort').value;
+  let sorted = [...driveAllFolders];
+  if (v === 'name-asc') sorted.sort(naturalNameSort);
+  else if (v === 'name-desc') sorted.sort((a,b) => naturalNameSort(b,a));
+  else if (v === 'date-desc') sorted.sort((a,b) => new Date(b.modifiedTime||0) - new Date(a.modifiedTime||0));
+  else if (v === 'date-asc') sorted.sort((a,b) => new Date(a.modifiedTime||0) - new Date(b.modifiedTime||0));
+  driveAllFolders = sorted;
+  renderDriveFolderItems(sorted, driveAllEpubs);
+}
+
+async function selectDriveEpub(f) {
+  closeDriveBrowser();
+  if (!serverUrl) { showSetup(); return; }
+  showLoading(true);
+  try {
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, {
+      headers: { Authorization: 'Bearer ' + gdriveBrowseToken }
+    });
+    if (!r.ok) throw new Error('Drive download failed: ' + r.status);
+    const blob = await r.blob();
+    const name = f.name.toLowerCase().endsWith('.epub') ? f.name : f.name + '.epub';
+    const file = new File([blob], name, { type: 'application/epub+zip' });
+    await loadEpubFromLibrary(file);
+  } catch(e) {
+    showLoading(false);
+    showToast('Could not import that file: ' + e.message);
+  }
+}
 
 function isTokenValid() {
   return gdriveToken && Date.now() < gdriveExpiry - 60000;
@@ -4284,16 +5318,31 @@ async function gdriveRestoreOnLoad() {
     localStorage.setItem('tts_server', serverUrl);
     document.getElementById('server-url').value = serverUrl;
   }
-  if (saves.speed) { speed = saves.speed; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
-  if (saves.fontSize) { fontSize = saves.fontSize; applyFontSize(fontSize); localStorage.setItem('tts_fs', fontSize); }
-  // Restore library if this device has none
-  if (saves.library && saves.library.length > 0 && library.length === 0) {
-    library = saves.library;
-    saveLibrary();
-    renderLibrary();
-    showToast('☁️ Library restored from Drive (' + library.length + ' books)');
-  } else if (saves.library && saves.library.length > 0) {
-    // Merge — add books from Drive that aren't in local library
+  // Drive only gets a settings push periodically (e.g. every 10 sentences),
+  // so on refresh this file can easily be older than a speed/font change the
+  // user just made on THIS device. Only let it win if it's actually newer
+  // than the last local change — otherwise a fresh "set speed to 1.6" gets
+  // silently stomped back to whatever speed was last synced (v3.3.4).
+  const localSettingsTs = parseInt(localStorage.getItem('bv_settings_ts') || '0');
+  const remoteSettingsAreNewer = !localSettingsTs || (saves.ts && saves.ts > localSettingsTs);
+  if (remoteSettingsAreNewer) {
+    if (saves.speed) { speed = saves.speed; applySpeeds(speed); localStorage.setItem('tts_speed', speed); }
+    if (saves.fontSize) { fontSize = saves.fontSize; applyFontSize(fontSize); localStorage.setItem('tts_fs', fontSize); }
+  }
+  // Merge Drive's library into the local one (never a raw overwrite).
+  // Previously, when the local library was empty this did `library =
+  // saves.library` — a wholesale replace. This Drive fetch takes two
+  // sequential network round trips (find file, then download it), and on a
+  // device that also needed a silent-reauth first (e.g. an iPad not opened
+  // in a while — a much slower path than an already-valid token), it can
+  // resolve well after the app has already loaded. If a book was imported
+  // via the Drive browser while local library was still empty and this
+  // fetch happened to land in that narrow window, the raw overwrite could
+  // silently discard the just-added book instead of the merge branch below
+  // (which only ever adds, never removes). Always merging removes that race
+  // entirely — same end result when local was genuinely empty, but safe
+  // regardless of timing (v3.3.7).
+  if (saves.library && saves.library.length > 0) {
     let added = 0;
     saves.library.forEach(driveBook => {
       if (!library.find(b => b.title === driveBook.title)) {
@@ -4361,4 +5410,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.0 | built 2026-08-27 -->
+<!-- Bookvoice v3.3.25 | built 2026-08-27 -->
