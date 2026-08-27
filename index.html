@@ -544,10 +544,14 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
   <div class="sheet" style="max-height:85vh">
     <div class="sheet-head"><span>Chinese Names</span><button class="sheet-close" onclick="closeSheet('zhnames-sheet')">×</button></div>
     <div class="sheet-body" style="padding:16px 20px">
-      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">Names spoken with the Chinese voice (set below in Read Language → Chinese Voice) instead of the English voice, while everything else keeps reading in English. Only active in English / Chinese→English modes.</p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">Names spoken with the Chinese voice (set below in Read Language → Chinese Voice) instead of the English voice, while everything else keeps reading in English.</p>
       <input type="text" id="zn-en" placeholder="Name as it appears in text (e.g. Luan Nian)" style="width:100%;margin-bottom:8px;font-size:14px">
       <input type="text" id="zn-zh" placeholder="Chinese characters (e.g. 栾念)" style="width:100%;margin-bottom:8px;font-size:14px">
       <button class="btn" style="width:100%;justify-content:center;margin-bottom:16px" onclick="addChineseName()">+ Add Name</button>
+      <div style="font-size:11px;color:var(--muted);margin:4px 0 8px;text-transform:uppercase;letter-spacing:.1em">Or paste many at once</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.6">One per line — name, then a tab, <code>=</code>, or space, then the Chinese characters.</p>
+      <textarea id="zn-bulk" rows="5" placeholder="Shang Zhitao&#9;尚之桃&#10;Luan Nian=栾念&#10;Sun Yu 孙雨" style="width:100%;margin-bottom:8px;font-size:13px;padding:10px 12px;font-family:inherit;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none;resize:vertical"></textarea>
+      <button class="btn ghost" style="width:100%;justify-content:center;margin-bottom:16px" onclick="addChineseNamesBulk()">+ Add All</button>
       <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.1em">Active Names</div>
       <div id="zn-rules" style="display:flex;flex-direction:column;gap:6px"></div>
     </div>
@@ -2222,6 +2226,40 @@ function addChineseName() {
   showToast('"' + en + '" → 🀄 "' + zh + '"');
 }
 
+// Parses one "Name <sep> 中文" line, where <sep> is a tab, "=", ":", "-",
+// spaces, or any mix of those — it just looks for where the Chinese
+// characters start and treats everything before that (trimmed) as the name.
+// Works whether the user pastes from a spreadsheet (tab-separated) or types
+// "Name=中文" by hand.
+function parseChineseNameLine(line) {
+  const m = line.match(/^(.*?)[\t=:\-]*\s*([㐀-鿿][\s\S]*)$/);
+  if (!m) return null;
+  const en = m[1].trim();
+  const zh = m[2].trim();
+  if (!en || !zh) return null;
+  return { en, zh };
+}
+
+function addChineseNamesBulk() {
+  const raw = document.getElementById('zn-bulk').value;
+  const lines = raw.split(/\r?\n/);
+  let added = 0, skipped = 0;
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) continue;
+    const parsed = parseChineseNameLine(t);
+    if (!parsed) { skipped++; continue; }
+    chineseNames = chineseNames.filter(n => n.en.toLowerCase() !== parsed.en.toLowerCase());
+    chineseNames.unshift(parsed);
+    added++;
+  }
+  if (!added && !skipped) { alert('Paste one or more lines first.'); return; }
+  saveChineseNames();
+  document.getElementById('zn-bulk').value = '';
+  renderChineseNames();
+  showToast(added + ' name' + (added === 1 ? '' : 's') + ' added' + (skipped ? ', ' + skipped + ' line(s) skipped' : ''));
+}
+
 function renderChineseNames() {
   const el = document.getElementById('zn-rules');
   if (!el) return;
@@ -2445,7 +2483,10 @@ function updateLangBtn() {
 
 function updateVoiceRowVisibility() {
   const showTh = ['th','zh-th','zh-en-th'].includes(langMode);
-  const showEn = ['en','zh-en','zh-en-th'].includes(langMode);
+  // "orig" (no live translation) still reads with the English voice
+  // (see LANG_VOICES) whenever the book's own text is already English —
+  // e.g. a pre-translated EPUB. So it needs the same voice pickers as "en".
+  const showEn = ['orig','en','zh-en','zh-en-th'].includes(langMode);
   // Chinese voice row also shown in English modes: it's used to read
   // any names configured in "Chinese Names" with correct pronunciation.
   const showZh = ['zh'].includes(langMode) || showEn;
@@ -2546,9 +2587,11 @@ async function translateBlocksBatch(blocks, BATCH = 20) {
 // Splits text into {text, zh} runs wherever a configured "Chinese Names"
 // entry appears, so those words can be synthesized with the Chinese voice
 // while the rest of the sentence stays in the current reading voice.
-// Only meaningful in modes where the spoken language is English.
+// Only meaningful in modes where the spoken language is English —
+// including "orig" when the book's own text is already English
+// (e.g. a pre-translated EPUB with no live translation needed).
 function buildNameSegments(text) {
-  if (!['en','zh-en'].includes(langMode)) return null;
+  if (!['orig','en','zh-en'].includes(langMode)) return null;
   if (!chineseNames.length) return null;
   const sorted = [...chineseNames].sort((a,b) => b.en.length - a.en.length);
   const escaped = sorted.map(n => n.en.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
@@ -5410,4 +5453,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.25 | built 2026-08-27 -->
+<!-- Bookvoice v3.3.27 | built 2026-08-28 -->
