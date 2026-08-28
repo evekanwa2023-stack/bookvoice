@@ -545,6 +545,10 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
     <div class="sheet-head"><span>Chinese Names</span><button class="sheet-close" onclick="closeSheet('zhnames-sheet')">×</button></div>
     <div class="sheet-body" style="padding:16px 20px">
       <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">Names spoken with the Chinese voice (set below in Read Language → Chinese Voice) instead of the English voice, while everything else keeps reading in English.</p>
+      <div class="setting-row" style="padding:10px 12px;margin-bottom:16px;background:var(--surface2);border-radius:8px">
+        <label style="font-size:14px">Use Chinese names</label>
+        <label class="toggle"><input type="checkbox" id="zn-enabled-toggle" onchange="setChineseNamesEnabled(this.checked)"><span class="toggle-slider"></span></label>
+      </div>
       <input type="text" id="zn-en" placeholder="Name as it appears in text (e.g. Luan Nian)" style="width:100%;margin-bottom:8px;font-size:14px">
       <input type="text" id="zn-zh" placeholder="Chinese characters (e.g. 栾念)" style="width:100%;margin-bottom:8px;font-size:14px">
       <button class="btn" style="width:100%;justify-content:center;margin-bottom:16px" onclick="addChineseName()">+ Add Name</button>
@@ -552,7 +556,10 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
       <p style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.6">One per line — name, then a tab, <code>=</code>, or space, then the Chinese characters.</p>
       <textarea id="zn-bulk" rows="5" placeholder="Shang Zhitao&#9;尚之桃&#10;Luan Nian=栾念&#10;Sun Yu 孙雨" style="width:100%;margin-bottom:8px;font-size:13px;padding:10px 12px;font-family:inherit;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none;resize:vertical"></textarea>
       <button class="btn ghost" style="width:100%;justify-content:center;margin-bottom:16px" onclick="addChineseNamesBulk()">+ Add All</button>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.1em">Active Names</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em">Active Names</div>
+        <button onclick="deleteAllChineseNames()" style="background:none;border:none;color:#e74c3c;font-size:12px;cursor:pointer;padding:2px 4px">Delete All</button>
+      </div>
       <div id="zn-rules" style="display:flex;flex-direction:column;gap:6px"></div>
     </div>
   </div>
@@ -812,6 +819,10 @@ setTimeout(() => {
 let pronounceRules = JSON.parse(localStorage.getItem('bv_pronounce') || '[]');
 let ruleScope = 'global';
 let chineseNames = JSON.parse(localStorage.getItem('bv_chinese_names') || '[]'); // [{en:"Luan Nian", zh:"栾念"}, ...]
+// Master on/off for Chinese-name voice-switching, independent of the list
+// itself — lets a name list be built up and kept without it being active.
+// Defaults off: the feature is opt-in even once names have been added.
+let chineseNamesEnabled = localStorage.getItem('bv_chinese_names_enabled') === 'true';
 let langMode = localStorage.getItem('bv_lang_mode') || 'orig'; // orig|en|th|zh|zh-en|zh-th|zh-en-th
 let translateCache = {}; // key: "mode:text" → final translated text
 let paragraphs = [];
@@ -2261,6 +2272,8 @@ function addChineseNamesBulk() {
 }
 
 function renderChineseNames() {
+  const toggle = document.getElementById('zn-enabled-toggle');
+  if (toggle) toggle.checked = chineseNamesEnabled;
   const el = document.getElementById('zn-rules');
   if (!el) return;
   el.innerHTML = '';
@@ -2310,6 +2323,33 @@ function deleteChineseName(i) {
   chineseNames.splice(i, 1);
   saveChineseNames();
   renderChineseNames();
+}
+
+function setChineseNamesEnabled(enabled) {
+  chineseNamesEnabled = enabled;
+  localStorage.setItem('bv_chinese_names_enabled', enabled ? 'true' : 'false');
+  clearAudioCacheAll(); // switching on/off changes what the cached audio would contain
+  showToast(enabled ? 'Chinese names on' : 'Chinese names off');
+  if (chapters.length) {
+    const wasPlaying = isPlaying;
+    stopAudio();
+    loadChapter(currentChapter).then(() => {
+      if (wasPlaying) {
+        isPlaying = true;
+        document.getElementById('play-btn').textContent = '⏸';
+        setTimeout(() => playFrom(sentenceIndex), 100);
+      }
+    });
+  }
+}
+
+function deleteAllChineseNames() {
+  if (!chineseNames.length) { showToast('No names to delete'); return; }
+  if (!confirm('Delete all ' + chineseNames.length + ' Chinese name' + (chineseNames.length === 1 ? '' : 's') + '?\nThis cannot be undone.')) return;
+  chineseNames = [];
+  saveChineseNames();
+  renderChineseNames();
+  showToast('All names deleted');
 }
 
 // Hook openSheet to render rules
@@ -2591,6 +2631,7 @@ async function translateBlocksBatch(blocks, BATCH = 20) {
 // including "orig" when the book's own text is already English
 // (e.g. a pre-translated EPUB with no live translation needed).
 function buildNameSegments(text) {
+  if (!chineseNamesEnabled) return null;
   if (!['orig','en','zh-en'].includes(langMode)) return null;
   if (!chineseNames.length) return null;
   const sorted = [...chineseNames].sort((a,b) => b.en.length - a.en.length);
@@ -5453,4 +5494,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.27 | built 2026-08-28 -->
+<!-- Bookvoice v3.3.29 | built 2026-08-28 -->
