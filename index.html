@@ -2330,16 +2330,14 @@ function setChineseNamesEnabled(enabled) {
   localStorage.setItem('bv_chinese_names_enabled', enabled ? 'true' : 'false');
   clearAudioCacheAll(); // switching on/off changes what the cached audio would contain
   showToast(enabled ? 'Chinese names on' : 'Chinese names off');
-  if (chapters.length) {
-    const wasPlaying = isPlaying;
+  // This toggle never changes the chapter's own text, only which voice(s)
+  // speak it — so unlike setLangMode() it must NOT call loadChapter() (that
+  // resets sentenceIndex to 0 and scrolls to top). Just re-fetch audio for
+  // the sentence already playing and resume from exactly there.
+  if (isPlaying) {
+    const resumeIdx = sentenceIndex;
     stopAudio();
-    loadChapter(currentChapter).then(() => {
-      if (wasPlaying) {
-        isPlaying = true;
-        document.getElementById('play-btn').textContent = '⏸';
-        setTimeout(() => playFrom(sentenceIndex), 100);
-      }
-    });
+    setTimeout(() => playFrom(resumeIdx), 100);
   }
 }
 
@@ -5019,7 +5017,7 @@ async function listDriveEpubs(fid) {
   do {
     const d = await driveApiList(
       `'${fid}' in parents and (mimeType='application/epub+zip' or name contains '.epub') and trashed=false`,
-      'files(id,name,size)', 'name', token
+      'files(id,name,size,modifiedTime)', 'name', token
     );
     all = all.concat(d.files || []);
     token = d.nextPageToken;
@@ -5185,22 +5183,28 @@ function filterDriveFolders() {
       const safe = q.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const [fd, ed] = await Promise.all([
         driveApiList(`mimeType='application/vnd.google-apps.folder' and name contains '${safe}' and trashed=false`, 'files(id,name,modifiedTime)'),
-        driveApiList(`(mimeType='application/epub+zip' or name contains '.epub') and name contains '${safe}' and trashed=false`, 'files(id,name,size)')
+        driveApiList(`(mimeType='application/epub+zip' or name contains '.epub') and name contains '${safe}' and trashed=false`, 'files(id,name,size,modifiedTime)')
       ]);
       driveIsGlobalSearch = true;
       renderDriveFolderItems((fd.files || []).sort(naturalNameSort), (ed.files || []).sort(naturalNameSort));
     } catch(e) { /* local filter above already shown as fallback */ }
   }, 500);
 }
+// Was only ever reordering driveAllFolders — EPUB files (the "📖 EPUB files"
+// group) were left in whatever order Drive returned them in, which is why
+// picking a sort had no visible effect in a folder with no subfolders.
+// Both groups (folders, EPUB files) now sort by the same chosen criteria,
+// independently, then render() keeps them as separate grouped sections.
 function applyDriveFolderSort() {
   const v = document.getElementById('drive-folder-sort').value;
-  let sorted = [...driveAllFolders];
-  if (v === 'name-asc') sorted.sort(naturalNameSort);
-  else if (v === 'name-desc') sorted.sort((a,b) => naturalNameSort(b,a));
-  else if (v === 'date-desc') sorted.sort((a,b) => new Date(b.modifiedTime||0) - new Date(a.modifiedTime||0));
-  else if (v === 'date-asc') sorted.sort((a,b) => new Date(a.modifiedTime||0) - new Date(b.modifiedTime||0));
-  driveAllFolders = sorted;
-  renderDriveFolderItems(sorted, driveAllEpubs);
+  let cmp;
+  if (v === 'name-asc') cmp = naturalNameSort;
+  else if (v === 'name-desc') cmp = (a,b) => naturalNameSort(b,a);
+  else if (v === 'date-desc') cmp = (a,b) => new Date(b.modifiedTime||0) - new Date(a.modifiedTime||0);
+  else cmp = (a,b) => new Date(a.modifiedTime||0) - new Date(b.modifiedTime||0); // date-asc
+  driveAllFolders = [...driveAllFolders].sort(cmp);
+  driveAllEpubs = [...driveAllEpubs].sort(cmp);
+  renderDriveFolderItems(driveAllFolders, driveAllEpubs);
 }
 
 async function selectDriveEpub(f) {
@@ -5494,4 +5498,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.29 | built 2026-08-28 -->
+<!-- Bookvoice v3.3.31 | built 2026-09-10 -->
