@@ -305,6 +305,13 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
           <span style="font-size:14px;color:var(--text)">☁️ Google Drive</span>
           <button class="gdrive-btn" id="gdrive-btn2" onclick="toggleGDrive()">Connect</button>
         </div>
+        <div style="padding:12px 20px;border-bottom:1px solid var(--border)">
+          <p style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">Manually move your reading position between devices — doesn't happen automatically, only when you tap these.</p>
+          <div style="display:flex;gap:8px">
+            <button class="btn ghost" style="flex:1;justify-content:center;font-size:13px" onclick="driveRestorePosition()">⬇ Restore from Drive</button>
+            <button class="btn ghost" style="flex:1;justify-content:center;font-size:13px" onclick="driveBackupPosition()">⬆ Backup to Drive</button>
+          </div>
+        </div>
         <button onclick="closeSheet('lib-options-sheet');clearDriveCache()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:#e07070;font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border)">☁️ Clear Drive Cache</button>
         <button onclick="closeSheet('lib-options-sheet');clearAllData()" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;color:#e07070;font-size:14px;font-family:inherit;cursor:pointer">🗑 Reset All Data</button>
       </div>
@@ -400,6 +407,17 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
       <p>No books yet.<br>Tap + Add EPUB to get started.</p>
       <button class="btn" style="justify-content:center" onclick="document.getElementById('lib-file-input').click()">+ Add EPUB</button>
       <button class="btn" style="justify-content:center" onclick="openDriveBrowser()">☁️ Browse Google Drive</button>
+    </div>
+  </div>
+  <!-- Mini player: lets audio keep playing while browsing the library instead
+       of forcing a stop, with a small bar to pause/resume or jump back in. -->
+  <div class="player" id="lib-mini-player" style="display:none">
+    <div class="player-row1" style="gap:10px">
+      <button class="ctrl-btn play-btn" id="lib-mini-play-btn" onclick="toggleLibMiniPlay()" style="width:38px!important;height:38px!important;font-size:14px!important">⏸</button>
+      <div class="player-info" onclick="reopenPlayingBook()" style="cursor:pointer">
+        <div class="now-label">🎧 Now Playing · tap to open</div>
+        <div class="now-ch" id="lib-mini-title"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -3192,6 +3210,7 @@ function stopReading(){
   document.getElementById('play-btn').textContent='▶';
   setStatus('paused');
   if('mediaSession' in navigator) navigator.mediaSession.playbackState='paused';
+  updateLibMiniPlayer();
 }
 
 // ── CONTROLS ──
@@ -4397,12 +4416,39 @@ function saveLibrary() {
 
 function showLibrary() {
   updateDriveStatusDot();
-  if (isPlaying) stopReading();
+  // Used to force-stop playback here (stopReading()) -- now audio keeps
+  // going in the background (the <audio> element lives outside #app, so
+  // hiding the reader doesn't touch it) and a small mini-player bar shows
+  // at the bottom of the library so it can still be paused or reopened.
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
   document.getElementById('library-screen').style.display = 'flex';
   markLibraryScreen();
   renderLibrary();
+  updateLibMiniPlayer();
+}
+
+function updateLibMiniPlayer() {
+  const bar = document.getElementById('lib-mini-player');
+  if (!bar) return;
+  // Shown whenever a book is loaded this session, playing or paused --
+  // it's the only way to resume or jump back in without leaving the
+  // library, so it shouldn't vanish just because playback is paused.
+  if (bookTitle && chapters && chapters.length) {
+    bar.style.display = 'block';
+    document.getElementById('lib-mini-title').textContent = bookTitle;
+    document.getElementById('lib-mini-play-btn').textContent = isPlaying ? '⏸' : '▶';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+function toggleLibMiniPlay() {
+  togglePlay();
+  updateLibMiniPlayer();
+}
+function reopenPlayingBook() {
+  const idx = library.findIndex(b => b.title === bookTitle);
+  if (idx >= 0) openBookFromLibrary(idx);
 }
 
 function showSetup() {
@@ -4517,6 +4563,14 @@ function deleteBook(e, idx) {
   }
   delete epubCache[book.title];
   idbDeleteBook(book.title);
+  // If this book is the one currently loaded/playing in the background
+  // (mini-player), stop it -- otherwise it keeps playing after being
+  // deleted, and the mini-player would point at a book no longer there.
+  if (bookTitle === book.title) {
+    if (isPlaying) stopReading();
+    bookTitle = ''; chapters = [];
+    updateLibMiniPlayer();
+  }
   library.splice(idx, 1);
   saveLibrary();
   renderLibrary();
@@ -4525,6 +4579,36 @@ function deleteBook(e, idx) {
 async function openBookFromLibrary(idx) {
   const book = library[idx];
   if (!serverUrl) { showSetup(); return; }
+
+  const isSameLiveBook = bookTitle === book.title && chapters && chapters.length;
+  // Opening a DIFFERENT book while one is still playing in the background
+  // (library mini-player) -- stop it first so two books' audio never
+  // overlaps. Reopening the SAME book just resumes below without this.
+  if (!isSameLiveBook && isPlaying) stopReading();
+
+  // If this exact book is still the one loaded in memory (most likely: she
+  // left it playing in the background via the library mini-player and is
+  // now tapping back in), just bring the reader screen back into view.
+  // Falling through to the normal path below would call loadChapter() and
+  // reset sentenceIndex from the last-*saved* position, which lags behind
+  // the live position and would yank playback backwards / interrupt it.
+  if (isSameLiveBook) {
+    document.getElementById('book-name').textContent = bookTitle;
+    document.getElementById('drop-zone').classList.add('hidden');
+    document.getElementById('reader-scroll').classList.remove('hidden');
+    document.getElementById('player').classList.remove('hidden');
+    markReaderScreen();
+    book.lastOpenedAt = Date.now();
+    saveLibrary();
+    document.getElementById('library-screen').style.display = 'none';
+    document.getElementById('setup-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    buildSidebar(); buildDownloadList(); setupMediaSession();
+    updateSentCounter();
+    const el = sentenceEls[sentenceIndex];
+    if (el) scrollToSentence(el);
+    return;
+  }
 
   // Helper to show reader with loaded chapters
   function showReader() {
@@ -5526,6 +5610,65 @@ async function gdriveRestoreOnLoad() {
   }
 }
 
+// Manual cross-device position sync. The automatic sync (gdriveSavePosition,
+// called periodically + gdriveRestoreOnLoad on startup) only ever ADDS a
+// book to the local library if the title isn't already there -- it never
+// updates an existing entry's chapter/sentence from Drive. So on a second
+// device where the book is added locally first (its own local entry starts
+// at chapter 0), the automatic merge sees the title already exists and
+// silently skips applying the Drive-saved progress, forever. These manual
+// buttons bypass that ambiguity entirely -- an explicit "pull the saved
+// spot" / "push my current spot" action Evelyn triggers herself.
+async function driveRestorePosition() {
+  if (!gdriveEnabled || !isTokenValid()) { showToast('Connect Google Drive first'); return; }
+  showToast('☁️ Checking Drive...');
+  const saves = await gdriveLoadSaves();
+  if (!saves || !saves.book) { showToast('No saved reading position found on Drive'); return; }
+
+  let idx = library.findIndex(b => b.title === saves.book);
+  if (idx < 0) {
+    // Book isn't in this device's library at all yet -- pull its metadata
+    // from Drive's synced library list too, so Restore can add it directly
+    // instead of requiring her to re-upload the EPUB first.
+    const driveBookMeta = (saves.library || []).find(b => b.title === saves.book);
+    if (!driveBookMeta) {
+      showToast('"' + saves.book + '" isn’t in your library yet — add that EPUB first, then Restore again');
+      return;
+    }
+    library.push({ ...driveBookMeta });
+    idx = library.length - 1;
+  }
+  library[idx].chapter = saves.chapter;
+  library[idx].sentence = saves.sentence;
+  if (typeof saves.furthestChapter === 'number') library[idx].furthestChapter = saves.furthestChapter;
+  if (typeof saves.furthestSentence === 'number') library[idx].furthestSentence = saves.furthestSentence;
+  saveLibrary();
+
+  const isCurrentlyOpen = bookTitle === saves.book && chapters && chapters.length;
+  if (isCurrentlyOpen) {
+    // Jump the live session straight to the restored spot, rather than
+    // going through openBookFromLibrary()'s "already open" fast path (which
+    // exists to protect an actively-playing book from being reset -- not
+    // what we want here, since restoring IS meant to move the position).
+    if (isPlaying) stopReading();
+    loadChapter(saves.chapter);
+    sentenceIndex = saves.sentence || 0;
+    updateSentCounter();
+  }
+  showToast('☁️ Restored "' + saves.book + '" — chapter ' + (saves.chapter + 1));
+  closeSheet('lib-options-sheet');
+  if (!isCurrentlyOpen) openBookFromLibrary(idx);
+}
+
+async function driveBackupPosition() {
+  if (!gdriveEnabled || !isTokenValid()) { showToast('Connect Google Drive first'); return; }
+  if (!bookTitle) { showToast('Open a book first, then back it up'); return; }
+  updateLibraryProgress();
+  showToast('☁️ Backing up to Drive...');
+  await gdriveSavePosition();
+  showToast('☁️ Backed up "' + bookTitle + '" — chapter ' + (currentChapter + 1));
+}
+
 function showToast(msg, duration) {
   const t = document.getElementById('sync-toast');
   t.textContent = msg; t.classList.add('show');
@@ -5575,4 +5718,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.32 | built 2026-09-12 -->
+<!-- Bookvoice v3.3.33 | built 2026-09-12 -->
