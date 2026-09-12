@@ -700,18 +700,29 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
       <span id="drive-browser-account" style="font-size:11px;color:var(--muted)"></span>
       <button class="btn ghost" style="padding:4px 10px;font-size:11px" onclick="switchDriveBrowseAccount()">🔁 Switch account</button>
     </div>
-    <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center">
+    <div style="padding:8px 12px 0;border-bottom:1px solid var(--border)">
       <input type="text" id="drive-folder-search" placeholder="🔍 Search Drive..."
         oninput="filterDriveFolders()"
-        style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;outline:none"
+        style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;outline:none;margin-bottom:8px"
         autocorrect="off" autocapitalize="off">
-      <select id="drive-folder-sort" onchange="applyDriveFolderSort()"
-        style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 6px;color:var(--text);font-size:12px">
-        <option value="name-asc">Name A→Z</option>
-        <option value="name-desc">Name Z→A</option>
-        <option value="date-desc">Newest</option>
-        <option value="date-asc">Oldest</option>
-      </select>
+      <div style="display:flex;gap:8px;padding-bottom:8px;flex-wrap:wrap">
+        <select id="drive-folder-sort" onchange="applyDriveFolderSort()"
+          style="flex:1;min-width:120px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 6px;color:var(--text);font-size:12px">
+          <option value="name-asc">Name A→Z</option>
+          <option value="name-desc">Name Z→A</option>
+          <option value="created-desc">Newest Created</option>
+          <option value="created-asc">Oldest Created</option>
+          <option value="modified-desc">Recently Modified</option>
+          <option value="modified-asc">Oldest Modified</option>
+        </select>
+        <select id="drive-folder-group" onchange="applyDriveFolderSort()"
+          style="flex:1;min-width:120px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 6px;color:var(--text);font-size:12px">
+          <option value="type">Group: By Type</option>
+          <option value="name">Group: By Name</option>
+          <option value="date">Group: By Date</option>
+          <option value="none">Group: None</option>
+        </select>
+      </div>
     </div>
     <div class="sheet-body" id="drive-folder-list" style="padding:0"></div>
   </div>
@@ -4994,6 +5005,8 @@ let driveFolderStack = [];
 let driveAllFolders = [];
 let driveAllEpubs = [];
 let driveIsGlobalSearch = false;
+let driveSortMode = localStorage.getItem('bv_drive_sort_mode') || 'name-asc';
+let driveGroupMode = localStorage.getItem('bv_drive_group_mode') || 'type';
 
 async function driveApiList(q, fields='files(id,name)', orderBy='name', pageToken=null) {
   const p = new URLSearchParams({ q, fields:`nextPageToken,${fields}`, orderBy, pageSize:'1000', ...(pageToken?{pageToken}:{}) });
@@ -5009,7 +5022,7 @@ function naturalNameSort(a, b) {
 }
 
 async function listDriveFolders(pid='root') {
-  const d = await driveApiList(`'${pid}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`, 'files(id,name,modifiedTime)');
+  const d = await driveApiList(`'${pid}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`, 'files(id,name,modifiedTime,createdTime)');
   return (d.files || []).sort(naturalNameSort);
 }
 async function listDriveEpubs(fid) {
@@ -5017,13 +5030,41 @@ async function listDriveEpubs(fid) {
   do {
     const d = await driveApiList(
       `'${fid}' in parents and (mimeType='application/epub+zip' or name contains '.epub') and trashed=false`,
-      'files(id,name,size,modifiedTime)', 'name', token
+      'files(id,name,size,modifiedTime,createdTime)', 'name', token
     );
     all = all.concat(d.files || []);
     token = d.nextPageToken;
   } while (token);
   return all.sort(naturalNameSort);
 }
+
+// Sort criteria. "Created" and "Modified" are kept distinct on purpose --
+// a file can be old (created long ago) but recently updated, or vice versa.
+function driveSortComparator(mode) {
+  if (mode === 'name-desc') return (a,b) => naturalNameSort(b,a);
+  if (mode === 'created-desc') return (a,b) => new Date(b.createdTime||0) - new Date(a.createdTime||0);
+  if (mode === 'created-asc') return (a,b) => new Date(a.createdTime||0) - new Date(b.createdTime||0);
+  if (mode === 'modified-desc') return (a,b) => new Date(b.modifiedTime||0) - new Date(a.modifiedTime||0);
+  if (mode === 'modified-asc') return (a,b) => new Date(a.modifiedTime||0) - new Date(b.modifiedTime||0);
+  return naturalNameSort; // name-asc
+}
+function nameGroupLetter(name) {
+  const c = (name || '').trim().charAt(0).toUpperCase();
+  return /[A-Z]/.test(c) ? c : '#';
+}
+function dateGroupBucket(iso) {
+  if (!iso) return 'unknown';
+  const d = new Date(iso), now = new Date();
+  if (d.toDateString() === now.toDateString()) return 'today';
+  const yest = new Date(now); yest.setDate(yest.getDate() - 1);
+  if (d.toDateString() === yest.toDateString()) return 'yesterday';
+  const diffDays = (now - d) / 86400000;
+  if (diffDays <= 7) return 'week';
+  if (diffDays <= 30) return 'month';
+  return 'older';
+}
+const DATE_BUCKET_ORDER = ['today','yesterday','week','month','older','unknown'];
+const DATE_BUCKET_LABEL = { today:'Today', yesterday:'Yesterday', week:'This Week', month:'This Month', older:'Older', unknown:'Unknown Date' };
 
 // ── Drive browser favorites (folders) ──
 function getDriveFavs() { try { return JSON.parse(localStorage.getItem('bv_drive_fav') || '[]'); } catch(e) { return []; } }
@@ -5046,6 +5087,10 @@ async function openDriveBrowser() {
   updateDriveBrowserAccountLabel();
   driveFolderStack = [{ id:'root', name:'My Drive' }];
   driveIsGlobalSearch = false;
+  const sortSel = document.getElementById('drive-folder-sort');
+  const groupSel = document.getElementById('drive-folder-group');
+  if (sortSel) sortSel.value = driveSortMode;
+  if (groupSel) groupSel.value = driveGroupMode;
   openSheet('drive-browser-sheet');
   await renderDriveFolderList('root', 'My Drive');
 }
@@ -5062,9 +5107,10 @@ async function renderDriveFolderList(pid, pname) {
       listDriveFolders(pid),
       pid !== 'root' ? listDriveEpubs(pid) : Promise.resolve([])
     ]);
-    driveAllFolders = folders;
-    driveAllEpubs = epubs;
-    renderDriveFolderItems(folders, epubs);
+    const cmp = driveSortComparator(driveSortMode);
+    driveAllFolders = folders.sort(cmp);
+    driveAllEpubs = epubs.sort(cmp);
+    renderDriveFolderItems(driveAllFolders, driveAllEpubs);
   } catch(e) {
     list.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted)">Error: ${e.message}</div>`;
   }
@@ -5125,24 +5171,61 @@ function renderDriveFolderItems(folders, epubs) {
     return;
   }
 
-  if (epubs.length > 0) {
-    const hdr = document.createElement('div');
-    hdr.className = 'drive-section-hdr';
-    hdr.textContent = '📖 EPUB files';
-    list.appendChild(hdr);
-    epubs.forEach(f => list.appendChild(mkDriveEpubItem(f)));
+  if (driveGroupMode === 'type') {
+    // Original grouping: EPUB files, then folders -- each section already
+    // sorted (driveAllFolders/driveAllEpubs are sorted before this is called).
+    if (epubs.length > 0) {
+      list.appendChild(mkSectionHdr('📖 EPUB files'));
+      epubs.forEach(f => list.appendChild(mkDriveEpubItem(f)));
+    }
+    if (folders.length > 0) {
+      list.appendChild(mkSectionHdr(pid === 'root' ? '📁 Folders' : '📁 Subfolders'));
+      folders.forEach(f => list.appendChild(mkDriveItemAny({ ...f, __isFolder: true })));
+    }
+    return;
   }
-  if (folders.length > 0) {
-    const hdr = document.createElement('div');
-    hdr.className = 'drive-section-hdr';
-    hdr.textContent = pid === 'root' ? '📁 Folders' : '📁 Subfolders';
-    list.appendChild(hdr);
-    folders.forEach(f => {
-      const item = mkDriveFolderItem(f);
-      item.onclick = () => { driveFolderStack.push({id:f.id,name:f.name}); renderDriveFolderList(f.id,f.name); };
-      list.appendChild(item);
+
+  // Other group modes mix files and folders together, so merge + re-sort
+  // by the chosen criteria first (concatenating two already-sorted arrays
+  // does not itself produce one globally sorted list).
+  const cmp = driveSortComparator(driveSortMode);
+  const combined = [
+    ...epubs.map(f => ({ ...f, __isFolder: false })),
+    ...folders.map(f => ({ ...f, __isFolder: true }))
+  ].sort(cmp);
+
+  if (driveGroupMode === 'none') {
+    combined.forEach(f => list.appendChild(mkDriveItemAny(f)));
+  } else if (driveGroupMode === 'name') {
+    let lastLetter = null;
+    combined.forEach(f => {
+      const letter = nameGroupLetter(f.name);
+      if (letter !== lastLetter) { list.appendChild(mkSectionHdr(letter)); lastLetter = letter; }
+      list.appendChild(mkDriveItemAny(f));
+    });
+  } else if (driveGroupMode === 'date') {
+    const buckets = { today:[], yesterday:[], week:[], month:[], older:[], unknown:[] };
+    combined.forEach(f => buckets[dateGroupBucket(f.modifiedTime)].push(f));
+    DATE_BUCKET_ORDER.forEach(b => {
+      if (!buckets[b].length) return;
+      list.appendChild(mkSectionHdr(DATE_BUCKET_LABEL[b]));
+      buckets[b].forEach(f => list.appendChild(mkDriveItemAny(f)));
     });
   }
+}
+function mkSectionHdr(text) {
+  const hdr = document.createElement('div');
+  hdr.className = 'drive-section-hdr';
+  hdr.textContent = text;
+  return hdr;
+}
+function mkDriveItemAny(f) {
+  if (f.__isFolder) {
+    const item = mkDriveFolderItem(f);
+    item.onclick = () => { driveFolderStack.push({id:f.id,name:f.name}); renderDriveFolderList(f.id,f.name); };
+    return item;
+  }
+  return mkDriveEpubItem(f);
 }
 
 function mkDriveFolderItem(f) {
@@ -5190,18 +5273,12 @@ function filterDriveFolders() {
     } catch(e) { /* local filter above already shown as fallback */ }
   }, 500);
 }
-// Was only ever reordering driveAllFolders — EPUB files (the "📖 EPUB files"
-// group) were left in whatever order Drive returned them in, which is why
-// picking a sort had no visible effect in a folder with no subfolders.
-// Both groups (folders, EPUB files) now sort by the same chosen criteria,
-// independently, then render() keeps them as separate grouped sections.
 function applyDriveFolderSort() {
-  const v = document.getElementById('drive-folder-sort').value;
-  let cmp;
-  if (v === 'name-asc') cmp = naturalNameSort;
-  else if (v === 'name-desc') cmp = (a,b) => naturalNameSort(b,a);
-  else if (v === 'date-desc') cmp = (a,b) => new Date(b.modifiedTime||0) - new Date(a.modifiedTime||0);
-  else cmp = (a,b) => new Date(a.modifiedTime||0) - new Date(b.modifiedTime||0); // date-asc
+  driveSortMode = document.getElementById('drive-folder-sort').value;
+  driveGroupMode = document.getElementById('drive-folder-group').value;
+  localStorage.setItem('bv_drive_sort_mode', driveSortMode);
+  localStorage.setItem('bv_drive_group_mode', driveGroupMode);
+  const cmp = driveSortComparator(driveSortMode);
   driveAllFolders = [...driveAllFolders].sort(cmp);
   driveAllEpubs = [...driveAllEpubs].sort(cmp);
   renderDriveFolderItems(driveAllFolders, driveAllEpubs);
@@ -5498,4 +5575,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.31 | built 2026-09-10 -->
+<!-- Bookvoice v3.3.32 | built 2026-09-12 -->
