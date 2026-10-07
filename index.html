@@ -2489,6 +2489,37 @@ function firstParagraphTextFromElement(root, fallbackText) {
   return sents.slice(0, GROUP).join(' ');
 }
 
+// v3.3.41: texts of the first `nParas` audio paragraphs (4 sentences each) of
+// a not-yet-displayed chapter, built exactly like wrapSentences() +
+// buildParagraphs() would (checked against the live pipeline on all 44
+// chapters of a real epub: 0 mismatches for paragraph 0).
+function firstParagraphTextsFromElement(root, nParas) {
+  const GROUP = 4;
+  const sents = [];
+  if (root) {
+    for (const block of root.querySelectorAll(BLOCK_SEL)) {
+      if (block.querySelector(BLOCK_SEL)) continue;
+      const t = (blockText(block) || block.textContent || '').trim();
+      if (!t) continue;
+      sents.push(...splitSent(t));
+      if (sents.length >= GROUP * nParas) break;
+    }
+  }
+  const out = [];
+  for (let i = 0; i < sents.length && out.length < nParas; i += GROUP) {
+    out.push(sents.slice(i, i + GROUP).join(' '));
+  }
+  return out;
+}
+
+// text -> Promise<blobUrl> for the next chapter's paragraphs 2 and 3, keyed by
+// voice|speed|text so a speed/voice change can't reuse stale audio.
+let prewarmTextCache = {};
+function prewarmKey(text) {
+  const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
+  return voice + '|' + speed + '|' + text;
+}
+
 async function prewarmNextChapterAudio(chIdx, preDiv) {
   try {
     if (chIdx >= chapters.length) return;
@@ -2499,7 +2530,24 @@ async function prewarmNextChapterAudio(chIdx, preDiv) {
     if (!txt) return;
     // `text` is stored so playFrom() can verify it matches paragraphs[0].text
     // before adopting the blob (v3.3.17).
-    nextChapterFirstAudioCache = { chapter: chIdx, text: txt, promise: fetchAudioBlob(txt) };
+    const firstPromise = fetchAudioBlob(txt);
+    nextChapterFirstAudioCache = { chapter: chIdx, text: txt, promise: firstPromise };
+
+    // v3.3.41: a chapter opens with a heading/epigraph, so paragraph 0 is often
+    // only a few seconds of audio — and paragraphs 1 and 2 used to be requested
+    // only AFTER the chapter started, so the voice stopped right after the first
+    // words waiting for them. Warm them too (one at a time, after the first).
+    prewarmTextCache = {};
+    const texts = firstParagraphTextsFromElement(preDiv, 3);
+    firstPromise.catch(() => {}).then(async () => {
+      for (let k = 1; k < texts.length; k++) {
+        const key = prewarmKey(texts[k]);
+        const p = fetchAudioBlob(texts[k]);
+        prewarmTextCache[key] = p;
+        p.catch(() => { delete prewarmTextCache[key]; });
+        try { await p; } catch(e) {}
+      }
+    });
   } catch(e) {}
 }
 
@@ -2712,7 +2760,7 @@ async function fetchAudioBlobMulti(segments, enVoice, retries = 1) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(25000)
+        signal: AbortSignal.timeout(40000)
       });
       if (!r.ok) throw new Error('multi TTS failed: ' + r.status);
       const blob = await r.blob();
@@ -2743,7 +2791,9 @@ async function fetchAudioBlob(text, retries = 1) {
   const url = `${serverUrl}/tts?` + new URLSearchParams(params);
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
+      // 30s (was 20s): the Colab server now retries stalled edge-tts calls
+      // itself (up to 3 x 8s), so the app must wait long enough to see that.
+      const r = await fetch(url, { signal: AbortSignal.timeout(30000) });
       if (!r.ok) throw new Error('TTS fetch failed: ' + r.status);
       const blob = await r.blob();
       if (blob.size < 100) throw new Error('Empty audio blob');
@@ -2787,7 +2837,12 @@ function getCachedAudio(entrySentIdx) {
   const key = audioCacheKey(entrySentIdx);
   if (!audioCache[key]) {
     const text = textForEntry(entrySentIdx);
-    audioCache[key] = fetchAudioBlob(text).catch(e => { delete audioCache[key]; throw e; });
+    // v3.3.41: reuse audio already prewarmed for this exact text/voice/speed
+    // (next chapter's paragraphs 2-3), otherwise fetch as usual.
+    const pk = prewarmKey(text);
+    const warmed = prewarmTextCache[pk];
+    if (warmed) delete prewarmTextCache[pk];
+    audioCache[key] = (warmed || fetchAudioBlob(text)).catch(e => { delete audioCache[key]; throw e; });
   }
   return audioCache[key];
 }
@@ -2817,12 +2872,34 @@ function clearAudioCacheAll() {
 // skipping/tapping anywhere in it never has to wait on a fresh TTS fetch.
 // Throttled with a small gap between requests so it doesn't starve a
 // foreground fetch triggered by the user actually tapping something.
+// v3.3.40: used to walk the chapter from paragraph 0 regardless of where you
+// were actually reading, so after a jump/resume mid-chapter it spent the
+// server's time on paragraphs you'd already passed while the ones coming up
+// next were only ever fetched 2 ahead. Now each step picks the nearest
+// not-yet-cached paragraph AT OR AFTER the current reading position (then
+// wraps around to earlier ones), re-evaluated every iteration so it follows
+// the reader. A paragraph that fails twice is skipped (no hot retry loop).
 async function preloadChapterAudio(chIdx) {
   const myToken = ++audioPreloadToken;
   buildParagraphs();
-  for (const p of paragraphs) {
+  const fails = {};
+  while (true) {
     if (myToken !== audioPreloadToken || chIdx !== currentChapter) return;
-    try { await getCachedAudio(p.startIdx); } catch(e) {}
+    const n = paragraphs.length;
+    if (!n) return;
+    const cur = findParagraphForSentence(sentenceIndex);
+    let next = -1;
+    for (let k = 0; k < n; k++) {
+      const idx = (cur + k) % n;
+      if ((fails[idx] || 0) >= 2) continue;
+      if (!audioCache[audioCacheKey(paragraphs[idx].startIdx)]) { next = idx; break; }
+    }
+    if (next === -1) return; // everything cached (or given up on)
+    try { await getCachedAudio(paragraphs[next].startIdx); }
+    catch(e) {
+      fails[next] = (fails[next] || 0) + 1;
+      await new Promise(r => setTimeout(r, 1500));
+    }
     await new Promise(r => setTimeout(r, 60));
   }
 }
@@ -5730,4 +5807,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.38 | built 2026-10-07 -->
+<!-- Bookvoice v3.3.41 | built 2026-10-08 -->
