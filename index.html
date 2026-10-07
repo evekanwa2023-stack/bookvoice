@@ -670,11 +670,6 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
             <option value="en-US-EmmaNeural">Emma (F)</option>
             <option value="en-US-JennyNeural">Jenny (F)</option>
             <option value="en-US-GuyNeural">Guy (M)</option>
-            <option value="kokoro:af_heart">Kokoro · Heart (F)</option>
-            <option value="kokoro:af_bella">Kokoro · Bella (F)</option>
-            <option value="kokoro:af_nicole">Kokoro · Nicole (F)</option>
-            <option value="kokoro:bf_emma">Kokoro · Emma UK (F)</option>
-            <option value="kokoro:am_michael">Kokoro · Michael (M)</option>
           </select>
         </div>
         <div class="setting-row" id="zh-voice-row" style="display:none;padding:10px 20px">
@@ -883,6 +878,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // Init language selectors
   const thSel = document.getElementById('th-voice-sel');
   if (thSel) thSel.value = localStorage.getItem('bv_th_voice') || 'th-TH-PremwadeeNeural';
+  // Kokoro voices were removed in v3.3.37; reset a leftover saved choice to Emma
+  if ((localStorage.getItem('bv_en_voice') || '').startsWith('kokoro:')) localStorage.setItem('bv_en_voice', 'en-US-EmmaNeural');
   const enSel = document.getElementById('en-voice-sel');
   if (enSel) enSel.value = localStorage.getItem('bv_en_voice') || 'en-US-EmmaNeural';
   const zhSel = document.getElementById('zh-voice-sel');
@@ -3074,8 +3071,12 @@ async function playFromRun(startSentIdx) {
     startSentIdx = 0;
     pIdx++;
 
-    // When on last 2 paragraphs — preload next chapter in background
-    if (pIdx >= paragraphs.length - 2 && currentChapter < chapters.length - 1) {
+    // When on last 5 paragraphs — preload next chapter in background.
+    // (v3.3.38: was the last 2. Each paragraph takes 4-6s to synthesize on
+    // Colab and the chapter's final paragraphs are often short, so the
+    // next chapter's first audio often wasn't ready when the chapter ended,
+    // forcing a visible wait + a duplicate fetch.)
+    if (pIdx >= paragraphs.length - 5 && currentChapter < chapters.length - 1) {
       const nextCi = currentChapter + 1;
       if (!document.getElementById('prerender-ch-' + nextCi)) {
         const preDiv = document.createElement('div');
@@ -3123,7 +3124,9 @@ async function playFromRun(startSentIdx) {
       try {
         const pre = nextChapterFirstAudioCache;
         if (pre && pre.chapter === currentChapter + 1) {
-          const earlyUrl = await Promise.race([pre.promise, sleepMs(50).then(() => null)]);
+          // v3.3.38: 50ms -> 400ms. If the prewarm is nearly done, waiting a
+          // moment beats throwing it away and fetching the same text again.
+          const earlyUrl = await Promise.race([pre.promise, sleepMs(400).then(() => null)]);
           if (earlyUrl && !isStopped && mySession === playSession) {
             audio.src = earlyUrl;
             audio.play().catch(() => {});
@@ -5727,4 +5730,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.35 | built 2026-10-07 -->
+<!-- Bookvoice v3.3.38 | built 2026-10-07 -->
