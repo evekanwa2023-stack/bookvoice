@@ -53,8 +53,10 @@ header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1
 .ch-list::-webkit-scrollbar-thumb{background:var(--border)}
 .ch-item{padding:8px 12px;font-size:12px;color:var(--muted);cursor:pointer;border-left:2px solid transparent;line-height:1.4;transition:all .1s}
 .ch-item:hover{color:var(--text);background:var(--surface2)}
-.ch-item.active{color:var(--accent);border-left-color:var(--accent);background:var(--surface2)}
-.ch-item.done{color:var(--green)}
+.ch-item.active{color:var(--text);font-weight:700;border-left:4px solid var(--accent);background:var(--accent-dim);box-shadow:inset 0 0 0 1px var(--accent)}
+.ch-item.active::before{content:"▶ ";color:var(--accent);font-size:10px}
+.ch-item.done{color:var(--green);opacity:.75}
+.ch-item.done::before{content:"✓ ";font-size:10px}
 
 /* ── READER ── */
 .reader-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
@@ -115,8 +117,10 @@ header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1
 /* chapter items in drawer */
 .drawer-ch{padding:12px 20px;font-size:14px;color:var(--muted);cursor:pointer;border-left:3px solid transparent;transition:all .1s;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .drawer-ch:hover{background:var(--surface2);color:var(--text)}
-.drawer-ch.active{color:var(--accent);border-left-color:var(--accent);background:var(--surface2)}
-.drawer-ch.done{color:var(--green)}
+.drawer-ch.active{color:var(--text);font-weight:700;border-left:4px solid var(--accent);background:var(--accent-dim);box-shadow:inset 0 0 0 1px var(--accent)}
+.drawer-ch.active span:first-child::before{content:"▶ ";color:var(--accent);font-size:11px}
+.drawer-ch.done{color:var(--green);opacity:.75}
+.drawer-ch.done span:first-child::before{content:"✓ ";font-size:11px}
 .drawer-ch .ch-min{font-size:11px;color:var(--muted);flex-shrink:0}
 /* settings sheet rows */
 .setting-row{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);gap:12px}
@@ -666,6 +670,11 @@ body.theme-sepia{--bg:#f4ecd8;--surface:#ede0c4;--surface2:#e8d9b8;--border:#c9b
             <option value="en-US-EmmaNeural">Emma (F)</option>
             <option value="en-US-JennyNeural">Jenny (F)</option>
             <option value="en-US-GuyNeural">Guy (M)</option>
+            <option value="kokoro:af_heart">Kokoro · Heart (F)</option>
+            <option value="kokoro:af_bella">Kokoro · Bella (F)</option>
+            <option value="kokoro:af_nicole">Kokoro · Nicole (F)</option>
+            <option value="kokoro:bf_emma">Kokoro · Emma UK (F)</option>
+            <option value="kokoro:am_michael">Kokoro · Michael (M)</option>
           </select>
         </div>
         <div class="setting-row" id="zh-voice-row" style="display:none;padding:10px 20px">
@@ -5718,4 +5727,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.33 | built 2026-09-12 -->
+<!-- Bookvoice v3.3.35 | built 2026-10-07 -->
