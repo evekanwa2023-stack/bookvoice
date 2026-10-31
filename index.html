@@ -2917,7 +2917,14 @@ async function fetchAudioBlob(text, retries = 1) {
 
   const params = { text: finalText, speed, voice };
   const url = `${serverUrl}/tts?` + new URLSearchParams(params);
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  // v3.3.47: measured on Colab, the Thai voice (Premwadee) works perfectly for long stretches
+  // and then fails on every request for minutes at a time. Giving up after 2 tries stopped
+  // playback with "Could not load audio" in those windows. For Thai text keep trying (5
+  // retries, waiting a little longer each time) so playback resumes by itself when the voice
+  // server recovers. English text keeps the old behaviour.
+  const thai = isThaiDominant(finalText);
+  const maxRetries = thai ? Math.max(retries, 5) : retries;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       // 30s (was 20s): the Colab server now retries stalled edge-tts calls
       // itself (up to 3 x 8s), so the app must wait long enough to see that.
@@ -2927,8 +2934,8 @@ async function fetchAudioBlob(text, retries = 1) {
       if (blob.size < 100) throw new Error('Empty audio blob');
       return URL.createObjectURL(blob);
     } catch(e) {
-      if (attempt === retries) throw e;
-      await new Promise(r => setTimeout(r, 500));
+      if (attempt === maxRetries) throw e;
+      await new Promise(r => setTimeout(r, thai ? 1500 * (attempt + 1) : 500));
     }
   }
 }
@@ -5949,4 +5956,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.46 | built 2026-10-31 -->
+<!-- Bookvoice v3.3.47 | built 2026-11-01 -->
