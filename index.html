@@ -2857,7 +2857,10 @@ const THAI_STAY_WITH_NEXT = new Set(['กำลัง','จะ','ได้','ไ
 const THAI_STAY_WITH_PREV = new Set(['มา','ไป','อยู่','ได้','แล้ว','ขึ้น','ลง','เข้า','ออก','ไว้','ให้','ด้วย','กัน','ครับ','ค่ะ','คะ','นะ','เลย','อีก','เสีย','ไหม','หรือ','จริง','มาก','ที่','ว่า','เอง','ๆ']);
 let _thSeg = null;
 function thaiBreathPauses(text) {
-  let t = text.replace(/([฀-๏๚-๿])[ \t]+(?=[฀-๏๚-๿])/g, '$1, ');
+  // v3.3.44: measured with the Thai voice - a plain space gives NO pause, a
+  // comma ~0.22s (too short to notice at 1.7x), a newline ~0.64s. So a phrase
+  // space becomes a newline; the Colab server keeps Thai pauses up to 0.4s.
+  let t = text.replace(/([฀-๏๚-๿])[ \t]+(?=[฀-๏๚-๿])/g, '$1\n');
   try {
     if (_thSeg === null) _thSeg = (typeof Intl !== 'undefined' && Intl.Segmenter) ? new Intl.Segmenter('th', { granularity: 'word' }) : false;
     if (_thSeg) {
@@ -5916,4 +5919,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.43 | built 2026-10-31 -->
+<!-- Bookvoice v3.3.44 | built 2026-10-31 -->
