@@ -2516,7 +2516,7 @@ function firstParagraphTextsFromElement(root, nParas) {
 // voice|speed|text so a speed/voice change can't reuse stale audio.
 let prewarmTextCache = {};
 function prewarmKey(text) {
-  const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
+  const voice = voiceForText(text);
   return voice + '|' + speed + '|' + text;
 }
 
@@ -2773,11 +2773,78 @@ async function fetchAudioBlobMulti(segments, enVoice, retries = 1) {
   }
 }
 
-async function fetchAudioBlob(text, retries = 1) {
-  const finalText = applyPronunciation(text);
-  const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
+// v3.3.42: Thai text read by an English voice (typical for a Thai EPUB opened
+// in "orig" mode) tripped on digits - the voice read the number in English and
+// then kept reading the following Thai with an English accent. Two fixes:
+// (1) Thai-dominant text always uses the Thai voice, whatever the mode's
+// voice is; (2) for a Thai voice, digits are spelled out as Thai words
+// before sending, so no Arabic numeral ever reaches the engine to flip it
+// into English mode.
+function isThaiDominant(text) {
+  const th = (text.match(/[฀-๿]/g) || []).length;
+  if (!th) return false;
+  const latin = (text.match(/[A-Za-z]/g) || []).length;
+  return th >= latin;
+}
 
-  const nameSegments = buildNameSegments(finalText);
+function voiceForText(text) {
+  const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
+  if (voice.startsWith('en-') && isThaiDominant(text)) {
+    return localStorage.getItem('bv_th_voice') || 'th-TH-PremwadeeNeural';
+  }
+  return voice;
+}
+
+const TH_DIGIT_WORDS = ['ศูนย์','หนึ่ง','สอง','สาม','สี่','ห้า','หก','เจ็ด','แปด','เก้า'];
+const TH_PLACE_WORDS = ['','สิบ','ร้อย','พัน','หมื่น','แสน'];
+
+function thaiGroupWords(s, hasHigher) {
+  const len = s.length;
+  const higherInGroup = /[1-9]/.test(s.slice(0, -1));
+  let out = '';
+  for (let i = 0; i < len; i++) {
+    const d = +s[i], p = len - 1 - i;
+    if (!d) continue;
+    if (p === 0) out += (d === 1 && (higherInGroup || hasHigher)) ? 'เอ็ด' : TH_DIGIT_WORDS[d];
+    else if (p === 1) out += d === 1 ? 'สิบ' : d === 2 ? 'ยี่สิบ' : TH_DIGIT_WORDS[d] + 'สิบ';
+    else out += TH_DIGIT_WORDS[d] + TH_PLACE_WORDS[p];
+  }
+  return out;
+}
+
+function thaiIntegerWords(digits) {
+  const spell = s => s.split('').map(c => TH_DIGIT_WORDS[+c]).join(' ');
+  // Leading zero ("007", phone numbers) or very long: read digit by digit.
+  if (digits.length > 1 && digits[0] === '0') return spell(digits);
+  if (digits.length > 15) return spell(digits);
+  const groups = [];
+  for (let end = digits.length; end > 0; end -= 6) groups.unshift(digits.slice(Math.max(0, end - 6), end));
+  let out = '', seenHigher = false;
+  groups.forEach((g, k) => {
+    if (!/[1-9]/.test(g)) return;
+    out += thaiGroupWords(g, seenHigher) + 'ล้าน'.repeat(groups.length - 1 - k);
+    seenHigher = true;
+  });
+  return out || TH_DIGIT_WORDS[0];
+}
+
+function thaiizeNumbers(text) {
+  let t = text.replace(/[๐-๙]/g, c => String(c.charCodeAt(0) - 0x0E50));
+  t = t.replace(/\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g, m => {
+    const [intPart, frac] = m.replace(/,/g, '').split('.');
+    let w = thaiIntegerWords(intPart);
+    if (frac) w += ' จุด ' + frac.split('').map(c => TH_DIGIT_WORDS[+c]).join(' ');
+    return ' ' + w + ' ';
+  });
+  return t.replace(/%/g, ' เปอร์เซ็นต์ ').replace(/ {2,}/g, ' ');
+}
+
+async function fetchAudioBlob(text, retries = 1) {
+  let finalText = applyPronunciation(text);
+  const voice = voiceForText(finalText);
+  if (voice.startsWith('th-')) finalText = thaiizeNumbers(finalText);
+
+  const nameSegments = voice.startsWith('en-') ? buildNameSegments(finalText) : null;
   if (nameSegments) {
     try {
       return await fetchAudioBlobMulti(nameSegments, voice, retries);
@@ -5807,4 +5874,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.41 | built 2026-10-08 -->
+<!-- Bookvoice v3.3.42 | built 2026-10-31 -->
