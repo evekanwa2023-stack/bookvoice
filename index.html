@@ -2031,7 +2031,37 @@ function splitSent(text){
   });
   const raw=masked.match(/[^.!?…]+[.!?…]*["’”]?\s*/g)||[masked];
   let i=0;
-  return raw.map(s=>s.replace(/\u0001/g,()=>saved[i++]).trim()).filter(Boolean);
+  return mergePunctOnly(splitLongThai(raw.map(s=>s.replace(/\u0001/g,()=>saved[i++]).trim()).filter(Boolean)));
+}
+// v3.3.46: Thai has no sentence punctuation, so a whole block was ONE "sentence" - one huge
+// highlight that cannot follow the voice (and one huge TTS request). Cut a long Thai block into
+// units of at most THAI_SENT_MAX characters, only at the spaces the text already has.
+// v3.3.46: a unit with nothing to speak (only a quote mark or an ellipsis, e.g. after a phrase that
+// ends with …") used to become its own "sentence" and its own TTS request. Fold it into the unit
+// before it (or the one after it, if it comes first).
+function mergePunctOnly(units){
+  const has=u=>/[\p{L}\p{N}]/u.test(u);
+  const out=[];
+  for(const u of units){
+    if(!has(u)&&out.length) out[out.length-1]+=u;
+    else out.push(u);
+  }
+  if(out.length>1&&!has(out[0])){ out[1]=out[0]+out[1]; out.shift(); }
+  return out;
+}
+const THAI_SENT_MAX = 90;
+function splitLongThai(pieces){
+  const out=[];
+  for(const p of pieces){
+    if(p.length<=THAI_SENT_MAX||!isThaiDominant(p)){ out.push(p); continue; }
+    let cur='';
+    for(const w of p.split(/ +/)){
+      if(cur&&cur.length+1+w.length>THAI_SENT_MAX){ out.push(cur); cur=w; }
+      else cur=cur?cur+' '+w:w;
+    }
+    if(cur) out.push(cur);
+  }
+  return out;
 }
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
@@ -2830,53 +2860,39 @@ function thaiizeNumbers(text) {
   return t.replace(/%/g, ' เปอร์เซ็นต์ ').replace(/ {2,}/g, ' ');
 }
 
-// v3.3.43: Thai is written without sentence punctuation (phrases are separated
-// by a space, not "," or "."), so the TTS engine heard one long unbroken run
-// and read it with no pauses - "no room to breathe". Turn the phrase spaces
-// into commas (the engine pauses on a comma). For a long stretch with no
-// space at all, add a comma at a word boundary (Intl.Segmenter, which knows
-// Thai words; skipped silently where it is unavailable) - but only at a safe
-// place, never inside a verb phrase ("กำลัง|มองมา"):
-//  - preferred: just BEFORE a clause-starting word (conjunction etc.)
-//  - fallback after a long run: any word boundary, except right after a word
-//    that must stay with the next one, or right before one that belongs to
-//    the previous one.
-const THAI_CLAUSE_MIN = 14;   // chars since the last pause before a clause-start break
-const THAI_RUN_FORCE = 60;    // chars with no safe clause-start: allow a guarded break
-const THAI_CLAUSE_START = new Set(['ซึ่ง','และ','แต่','เมื่อ','ถ้า','หาก','จึง','เพราะ','จน','แม้','ทว่า','หรือ','ส่วน','ดังนั้น','ขณะที่','ก่อนที่','หลังจาก']);
-const THAI_STAY_WITH_NEXT = new Set(['กำลัง','จะ','ได้','ไม่','ให้','ที่','ซึ่ง','ของ','ใน','แก่','กับ','ต่อ','การ','ความ','เป็น','มี','ก็','คง','เคย','ยัง','อัน','แห่ง','โดย','จาก','ถึง','แก่','ว่า','ต้อง','ควร','อาจ','คือ','เพื่อ','ตาม','เสมือน','ราวกับ']);
-const THAI_STAY_WITH_PREV = new Set(['มา','ไป','อยู่','ได้','แล้ว','ขึ้น','ลง','เข้า','ออก','ไว้','ให้','ด้วย','กัน','ครับ','ค่ะ','คะ','นะ','เลย','อีก','เสีย','ไหม','หรือ','จริง','มาก','ที่','ว่า','เอง','ๆ']);
-let _thSeg = null;
+// v3.3.46: phrase pauses for Thai. The EPUB separates Thai phrases with a space, and the
+// voice does NOT pause at a plain space (measured). So a space between two Thai phrases
+// becomes THAI_PAUSE: measured with Emma, "; " gives ~0.3s at 1.2x speed (0.2s at 1.7x), a
+// line break ~0.37s, a comma only ~0.1s. No pause BEFORE a word that finishes the previous
+// phrase (ได้, แล้ว, ด้วย ...) or AFTER a word that needs the next one (กำลัง, จะ, ไม่ ...):
+// the source text often has a stray space there. Long unbroken runs are no longer cut at
+// word boundaries (v3.3.43-45 did, and split compounds like อีก|ฝ่าย).
+const THAI_PAUSE = '; ';
+const THAI_PAUSE_CHARS = 8; // a phrase pause costs about as much time as 8 spoken Thai characters (highlight timing)
+const THAI_STAY_WITH_NEXT = ['กำลัง','จะ','ไม่','ให้','ที่','ซึ่ง','ของ','ใน','แก่','กับ','ต่อ','การ','ความ','เป็น','โดย','จาก','เพื่อ','ตาม','ต้อง','ควร','อาจ','คือ','ว่า']; // the previous phrase ENDS with one of these -> no pause
+const THAI_STAY_WITH_PREV = new Set(['มา','ไป','อยู่','ได้','แล้ว','ขึ้น','ลง','เข้า','ออก','ไว้','ให้','ด้วย','กัน','ครับ','ค่ะ','คะ','นะ','เลย','อีก','เสีย','ไหม','จริง','มาก','เอง','ๆ','ฝ่าย']); // the next token IS exactly one of these -> no pause
 function thaiBreathPauses(text) {
-  // v3.3.44: measured with the Thai voice - a plain space gives NO pause, a
-  // comma ~0.22s (too short to notice at 1.7x), a newline ~0.64s. So a phrase
-  // space becomes a newline; the Colab server keeps Thai pauses up to 0.4s.
-  let t = text.replace(/([฀-๏๚-๿])[ \t]+(?=[฀-๏๚-๿])/g, '$1\n');
-  try {
-    if (_thSeg === null) _thSeg = (typeof Intl !== 'undefined' && Intl.Segmenter) ? new Intl.Segmenter('th', { granularity: 'word' }) : false;
-    if (_thSeg) {
-      t = t.replace(/[฀-๿]{41,}/g, run => {
-        const words = Array.from(_thSeg.segment(run), x => x.segment);
-        let out = '', len = 0;
-        for (let i = 0; i < words.length; i++) {
-          const w = words[i], prev = words[i - 1];
-          let brk = false;
-          if (i > 0) {
-            if (THAI_CLAUSE_START.has(w) && len >= THAI_CLAUSE_MIN) brk = true;
-            else if (len >= THAI_RUN_FORCE && !THAI_STAY_WITH_NEXT.has(prev) && !THAI_STAY_WITH_PREV.has(w)) brk = true;
-          }
-          if (brk) { out += ', '; len = 0; }
-          out += w; len += w.length;
-        }
-        return out;
-      });
-    }
-  } catch(e) {}
-  return t.replace(/,(\s*,)+/g, ',');
+  const re = /([\u0E00-\u0E4F\u0E5A-\u0E7F])([ \t]+)(?=[\u0E00-\u0E4F\u0E5A-\u0E7F])/g;
+  return text.replace(re, (m, last, sp, offset, whole) => {
+    const prev = (whole.slice(0, offset + 1).match(/[^\s]+$/) || [''])[0];
+    const next = (whole.slice(offset + m.length).match(/^[^\s]+/) || [''])[0];
+    if (THAI_STAY_WITH_PREV.has(next) || THAI_STAY_WITH_NEXT.some(w => prev.endsWith(w))) return last + ' ';
+    return last + THAI_PAUSE;
+  });
 }
 
 function thaiTtsPrep(text) {
   return isThaiDominant(text) ? thaiizeNumbers(thaiBreathPauses(text)) : text;
+}
+
+function silentBlobUrl(ms) {
+  const rate = 8000, n = Math.floor(rate * ms / 1000), buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, n * 2, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
 }
 
 async function fetchAudioBlob(text, retries = 1) {
@@ -2885,6 +2901,9 @@ async function fetchAudioBlob(text, retries = 1) {
   // v3.3.45: only Thai-dominant text is touched (digits -> Thai words, phrase pauses);
   // English text with digits is left exactly as it was.
   finalText = thaiTtsPrep(finalText);
+  // v3.3.46: only punctuation (a lone quote mark, an ellipsis)? There is nothing to say - a TTS
+  // request for it can fail and stop playback. Play a short silence instead.
+  if (!/[\p{L}\p{N}]/u.test(finalText)) return silentBlobUrl(300);
 
   const nameSegments = buildNameSegments(finalText);
   if (nameSegments) {
@@ -3022,10 +3041,24 @@ function clearHighlightTimers() {
 // is built — nonzero when auto-advance gapless-started the blob before
 // loadChapter/playFrom caught up. Each timer fires that much sooner (clamped
 // to 0, i.e. immediately for sentences the voice has already passed).
+// Fitted against real Emma Thai audio (chapter 2, 42 sentence boundaries): the time a Thai unit
+// takes follows its characters WITHOUT the vowel/tone marks, plus about 8 such characters per
+// phrase pause. Mean error 0.61s (raw length: 0.88s). The voice's own speed varies, so this is
+// still an estimate, not an alignment.
+function highlightWeight(sent, isLast) {
+  if (!isThaiDominant(sent)) return Math.max(sent.length, 1);
+  const spoken = thaiTtsPrep(applyPronunciation(sent));
+  const nPauses = spoken.split(THAI_PAUSE).length - 1;
+  const text = spoken.split(THAI_PAUSE).join('').replace(/[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g, '');
+  return Math.max(text.length + (nPauses + (isLast ? 0 : 1)) * THAI_PAUSE_CHARS, 1);
+}
+
 function scheduleHighlights(para, firstSentIdx, duration, elapsedMs = 0) {
   clearHighlightTimers();
   const sentGroup = sentences.slice(para.startIdx, para.startIdx + para.count);
-  const charCounts = sentGroup.map(s => Math.max(s.length, 1));
+  // v3.3.46: weigh each sentence by what is actually SPOKEN (Thai digits spelled out, plus the
+  // phrase pauses), not by its raw length, otherwise the highlight drifts away from the voice.
+  const charCounts = sentGroup.map((s, j) => highlightWeight(s, j === sentGroup.length - 1));
   const totalChars = charCounts.reduce((a,b) => a+b, 0) || 1;
   let elapsed = -elapsedMs;
   sentGroup.forEach((_, j) => {
@@ -5916,4 +5949,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.45 | built 2026-10-31 -->
+<!-- Bookvoice v3.3.46 | built 2026-10-31 -->
