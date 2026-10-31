@@ -2516,7 +2516,7 @@ function firstParagraphTextsFromElement(root, nParas) {
 // voice|speed|text so a speed/voice change can't reuse stale audio.
 let prewarmTextCache = {};
 function prewarmKey(text) {
-  const voice = voiceForText(text);
+  const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
   return voice + '|' + speed + '|' + text;
 }
 
@@ -2773,26 +2773,17 @@ async function fetchAudioBlobMulti(segments, enVoice, retries = 1) {
   }
 }
 
-// v3.3.42: Thai text read by an English voice (typical for a Thai EPUB opened
-// in "orig" mode) tripped on digits - the voice read the number in English and
-// then kept reading the following Thai with an English accent. Two fixes:
-// (1) Thai-dominant text always uses the Thai voice, whatever the mode's
-// voice is; (2) for a Thai voice, digits are spelled out as Thai words
-// before sending, so no Arabic numeral ever reaches the engine to flip it
-// into English mode.
+// v3.3.42 / v3.3.45: Thai text read by an English voice (Emma) tripped on digits -
+// the voice read the number in English and then kept reading the following Thai
+// with an English accent. Fix: when the text itself is Thai, digits are spelled
+// out as Thai words before sending, so no Arabic numeral ever reaches the
+// engine to flip it into English mode. The voice is NOT changed (v3.3.42 forced
+// the Thai voice; that failed too often from Colab, so v3.3.45 keeps Emma).
 function isThaiDominant(text) {
   const th = (text.match(/[฀-๿]/g) || []).length;
   if (!th) return false;
   const latin = (text.match(/[A-Za-z]/g) || []).length;
   return th >= latin;
-}
-
-function voiceForText(text) {
-  const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
-  if (voice.startsWith('en-') && isThaiDominant(text)) {
-    return localStorage.getItem('bv_th_voice') || 'th-TH-PremwadeeNeural';
-  }
-  return voice;
 }
 
 const TH_DIGIT_WORDS = ['ศูนย์','หนึ่ง','สอง','สาม','สี่','ห้า','หก','เจ็ด','แปด','เก้า'];
@@ -2884,12 +2875,18 @@ function thaiBreathPauses(text) {
   return t.replace(/,(\s*,)+/g, ',');
 }
 
+function thaiTtsPrep(text) {
+  return isThaiDominant(text) ? thaiizeNumbers(thaiBreathPauses(text)) : text;
+}
+
 async function fetchAudioBlob(text, retries = 1) {
   let finalText = applyPronunciation(text);
-  const voice = voiceForText(finalText);
-  if (voice.startsWith('th-')) finalText = thaiizeNumbers(thaiBreathPauses(finalText));
+  const voice = (LANG_VOICES[langMode] || LANG_VOICES['en'])();
+  // v3.3.45: only Thai-dominant text is touched (digits -> Thai words, phrase pauses);
+  // English text with digits is left exactly as it was.
+  finalText = thaiTtsPrep(finalText);
 
-  const nameSegments = voice.startsWith('en-') ? buildNameSegments(finalText) : null;
+  const nameSegments = buildNameSegments(finalText);
   if (nameSegments) {
     try {
       return await fetchAudioBlobMulti(nameSegments, voice, retries);
@@ -5919,4 +5916,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.44 | built 2026-10-31 -->
+<!-- Bookvoice v3.3.45 | built 2026-10-31 -->
