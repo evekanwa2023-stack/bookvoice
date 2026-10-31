@@ -2839,10 +2839,52 @@ function thaiizeNumbers(text) {
   return t.replace(/%/g, ' เปอร์เซ็นต์ ').replace(/ {2,}/g, ' ');
 }
 
+// v3.3.43: Thai is written without sentence punctuation (phrases are separated
+// by a space, not "," or "."), so the TTS engine heard one long unbroken run
+// and read it with no pauses - "no room to breathe". Turn the phrase spaces
+// into commas (the engine pauses on a comma). For a long stretch with no
+// space at all, add a comma at a word boundary (Intl.Segmenter, which knows
+// Thai words; skipped silently where it is unavailable) - but only at a safe
+// place, never inside a verb phrase ("กำลัง|มองมา"):
+//  - preferred: just BEFORE a clause-starting word (conjunction etc.)
+//  - fallback after a long run: any word boundary, except right after a word
+//    that must stay with the next one, or right before one that belongs to
+//    the previous one.
+const THAI_CLAUSE_MIN = 14;   // chars since the last pause before a clause-start break
+const THAI_RUN_FORCE = 60;    // chars with no safe clause-start: allow a guarded break
+const THAI_CLAUSE_START = new Set(['ซึ่ง','และ','แต่','เมื่อ','ถ้า','หาก','จึง','เพราะ','จน','แม้','ทว่า','หรือ','ส่วน','ดังนั้น','ขณะที่','ก่อนที่','หลังจาก']);
+const THAI_STAY_WITH_NEXT = new Set(['กำลัง','จะ','ได้','ไม่','ให้','ที่','ซึ่ง','ของ','ใน','แก่','กับ','ต่อ','การ','ความ','เป็น','มี','ก็','คง','เคย','ยัง','อัน','แห่ง','โดย','จาก','ถึง','แก่','ว่า','ต้อง','ควร','อาจ','คือ','เพื่อ','ตาม','เสมือน','ราวกับ']);
+const THAI_STAY_WITH_PREV = new Set(['มา','ไป','อยู่','ได้','แล้ว','ขึ้น','ลง','เข้า','ออก','ไว้','ให้','ด้วย','กัน','ครับ','ค่ะ','คะ','นะ','เลย','อีก','เสีย','ไหม','หรือ','จริง','มาก','ที่','ว่า','เอง','ๆ']);
+let _thSeg = null;
+function thaiBreathPauses(text) {
+  let t = text.replace(/([฀-๏๚-๿])[ \t]+(?=[฀-๏๚-๿])/g, '$1, ');
+  try {
+    if (_thSeg === null) _thSeg = (typeof Intl !== 'undefined' && Intl.Segmenter) ? new Intl.Segmenter('th', { granularity: 'word' }) : false;
+    if (_thSeg) {
+      t = t.replace(/[฀-๿]{41,}/g, run => {
+        const words = Array.from(_thSeg.segment(run), x => x.segment);
+        let out = '', len = 0;
+        for (let i = 0; i < words.length; i++) {
+          const w = words[i], prev = words[i - 1];
+          let brk = false;
+          if (i > 0) {
+            if (THAI_CLAUSE_START.has(w) && len >= THAI_CLAUSE_MIN) brk = true;
+            else if (len >= THAI_RUN_FORCE && !THAI_STAY_WITH_NEXT.has(prev) && !THAI_STAY_WITH_PREV.has(w)) brk = true;
+          }
+          if (brk) { out += ', '; len = 0; }
+          out += w; len += w.length;
+        }
+        return out;
+      });
+    }
+  } catch(e) {}
+  return t.replace(/,(\s*,)+/g, ',');
+}
+
 async function fetchAudioBlob(text, retries = 1) {
   let finalText = applyPronunciation(text);
   const voice = voiceForText(finalText);
-  if (voice.startsWith('th-')) finalText = thaiizeNumbers(finalText);
+  if (voice.startsWith('th-')) finalText = thaiizeNumbers(thaiBreathPauses(finalText));
 
   const nameSegments = voice.startsWith('en-') ? buildNameSegments(finalText) : null;
   if (nameSegments) {
@@ -5874,4 +5916,4 @@ function attemptSilentAuth() {
 </script>
 </body>
 </html>
-<!-- Bookvoice v3.3.42 | built 2026-10-31 -->
+<!-- Bookvoice v3.3.43 | built 2026-10-31 -->
